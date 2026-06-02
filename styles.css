@@ -254,6 +254,7 @@ textarea:focus {
   min-height: 520px;
   display: block;
   cursor: grab;
+  user-select: none;
 }
 
 #graphSvg:active {
@@ -284,6 +285,10 @@ textarea:focus {
   stroke-width: 1.5;
 }
 
+.node {
+  cursor: move;
+}
+
 .node.selected rect,
 .node.highlight rect {
   stroke: var(--accent);
@@ -294,6 +299,14 @@ textarea:focus {
   font-size: 12px;
   fill: var(--ink);
   pointer-events: none;
+}
+
+.node .title {
+  font-size: 13px;
+}
+
+.node .field {
+  fill: #243149;
 }
 
 .node .kind {
