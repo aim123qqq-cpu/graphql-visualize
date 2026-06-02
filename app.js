@@ -74,6 +74,8 @@ enum Role {
     mode: "types",
     zoom: 1,
     pan: { x: 40, y: 40 },
+    nodePositions: {},
+    renderFrame: 0,
     selected: null,
     search: ""
   };
@@ -128,6 +130,7 @@ enum Role {
     el.clearBtn.addEventListener("click", () => {
       el.schemaInput.value = "";
       state.graph = { nodes: [], edges: [], warnings: [] };
+      state.nodePositions = {};
       state.selected = null;
       render();
     });
@@ -208,6 +211,7 @@ enum Role {
     }
     try {
       state.graph = raw[0] === "{" ? parseIntrospection(JSON.parse(raw)) : parseSdl(raw);
+      state.nodePositions = {};
       state.selected = null;
       state.zoom = 1;
       state.pan = { x: 40, y: 40 };
@@ -385,37 +389,100 @@ enum Role {
 
   function layout(nodes, edges) {
     const density = Number(el.densityInput.value) / 100;
-    const columns = ["OBJECT", "INTERFACE", "INPUT_OBJECT", "INPUT", "ENUM", "UNION", "SCALAR"];
-    const grouped = new Map();
-    nodes.forEach((node) => {
-      const normalized = node.kind === "INPUT" ? "INPUT_OBJECT" : node.kind;
-      const group = columns.includes(normalized) ? normalized : "OBJECT";
-      if (!grouped.has(group)) grouped.set(group, []);
-      grouped.get(group).push(node);
+    const metrics = new Map(nodes.map((node) => [node.id, nodeMetrics(node)]));
+    const indegree = new Map(nodes.map((node) => [node.id, 0]));
+    const outgoing = new Map(nodes.map((node) => [node.id, []]));
+
+    edges.forEach((edge) => {
+      if (!indegree.has(edge.source) || !indegree.has(edge.target)) return;
+      indegree.set(edge.target, indegree.get(edge.target) + 1);
+      outgoing.get(edge.source).push(edge.target);
     });
+
+    const levels = assignLevels(nodes, indegree, outgoing);
+    const byLevel = new Map();
+    nodes.forEach((node) => {
+      const level = levels.get(node.id) || 0;
+      if (!byLevel.has(level)) byLevel.set(level, []);
+      byLevel.get(level).push(node);
+    });
+
     const positioned = [];
-    columns.forEach((column, index) => {
-      const list = (grouped.get(column) || []).sort((a, b) => a.name.localeCompare(b.name));
-      list.forEach((node, row) => {
-        const height = Math.max(78, 46 + Math.min(node.fields.length, 8) * 18);
-        positioned.push({
-          ...node,
-          x: index * 260 * density,
-          y: row * 132 * density,
-          width: 200,
-          height
-        });
+    Array.from(byLevel.keys()).sort((a, b) => a - b).forEach((level) => {
+      const list = byLevel.get(level).sort((a, b) => {
+        const kindCompare = kindWeight(a.kind) - kindWeight(b.kind);
+        return kindCompare || a.name.localeCompare(b.name);
+      });
+      let y = 0;
+      list.forEach((node) => {
+        const metric = metrics.get(node.id);
+        const saved = state.nodePositions[node.id];
+        const x = saved ? saved.x : level * 300 * density;
+        const nextY = saved ? saved.y : y;
+        positioned.push({ ...node, ...metric, x, y: nextY });
+        y += metric.height + 34 * density;
       });
     });
     return { nodes: positioned, edges };
   }
 
+  function assignLevels(nodes, indegree, outgoing) {
+    const levels = new Map();
+    const queue = nodes
+      .filter((node) => node.name === "Query" || node.name === "Mutation" || node.name === "Subscription" || indegree.get(node.id) === 0)
+      .sort((a, b) => rootWeight(a.name) - rootWeight(b.name) || a.name.localeCompare(b.name));
+
+    queue.forEach((node) => levels.set(node.id, 0));
+    for (let index = 0; index < queue.length; index += 1) {
+      const node = queue[index];
+      const nextLevel = (levels.get(node.id) || 0) + 1;
+      (outgoing.get(node.id) || []).forEach((targetId) => {
+        if (!levels.has(targetId) || nextLevel < levels.get(targetId)) {
+          levels.set(targetId, nextLevel);
+          const target = nodes.find((item) => item.id === targetId);
+          if (target && !queue.includes(target)) queue.push(target);
+        }
+      });
+    }
+    nodes.forEach((node) => {
+      if (!levels.has(node.id)) levels.set(node.id, kindWeight(node.kind) > 3 ? 2 : 1);
+    });
+    return levels;
+  }
+
+  function rootWeight(name) {
+    const order = { Query: 0, Mutation: 1, Subscription: 2 };
+    return Object.prototype.hasOwnProperty.call(order, name) ? order[name] : 10;
+  }
+
+  function kindWeight(kind) {
+    const order = { OBJECT: 0, INTERFACE: 1, INPUT_OBJECT: 2, INPUT: 2, UNION: 3, ENUM: 4, SCALAR: 5 };
+    return Object.prototype.hasOwnProperty.call(order, kind) ? order[kind] : 6;
+  }
+
+  function nodeMetrics(node) {
+    const width = 232;
+    const titleLines = wrapText(node.name, 24);
+    const kindLines = [readableKind(node.kind)];
+    const fieldRows = node.fields.slice(0, 7).flatMap((field) => wrapText(field.name + ": " + shortType(field.type), 28));
+    const moreRows = node.fields.length > 7 ? ["+ еще " + (node.fields.length - 7)] : [];
+    const rows = { titleLines, kindLines, fieldRows, moreRows };
+    const height = Math.max(88, 22 + titleLines.length * 16 + kindLines.length * 16 + fieldRows.length * 17 + moreRows.length * 17);
+    return { width, height, rows };
+  }
+
   function render() {
+    state.renderFrame = 0;
     const graph = visibleGraph();
     renderStats(graph);
     renderWarnings(state.graph.warnings);
     renderDetails();
     renderSvg(graph);
+  }
+
+  function scheduleRender() {
+    if (state.renderFrame) return;
+    state.renderFrame = window.requestAnimationFrame(render);
   }
 
   function renderStats(graph) {
@@ -483,31 +550,30 @@ enum Role {
       const source = nodeById.get(edge.source);
       const target = nodeById.get(edge.target);
       if (!source || !target) return "";
-      const sx = source.x + source.width;
-      const sy = source.y + source.height / 2;
-      const tx = target.x;
-      const ty = target.y + target.height / 2;
-      const mid = Math.max(40, Math.abs(tx - sx) / 2);
-      const d = `M ${sx} ${sy} C ${sx + mid} ${sy}, ${tx - mid} ${ty}, ${tx} ${ty}`;
+      const anchors = edgeAnchors(source, target);
+      const mid = Math.max(44, Math.abs(anchors.tx - anchors.sx) / 2);
+      const d = `M ${anchors.sx} ${anchors.sy} C ${anchors.sx + mid} ${anchors.sy}, ${anchors.tx - mid} ${anchors.ty}, ${anchors.tx} ${anchors.ty}`;
       const selected = state.selected && state.selected.type === "edge" && state.selected.data.id === edge.id;
       const highlighted = highlightIds.has(edge.source) || highlightIds.has(edge.target);
       return `<g class="edge-group ${selected ? "selected" : ""}" data-edge="${escapeAttr(edge.id)}">
         <path class="edge ${selected ? "selected" : ""} ${highlighted ? "highlight" : ""}" d="${d}"></path>
-        ${edge.label ? `<text class="edge-label" x="${(sx + tx) / 2}" y="${(sy + ty) / 2 - 8}">${escapeHtml(edge.label)}</text>` : ""}
+        ${edge.label ? `<text class="edge-label" x="${(anchors.sx + anchors.tx) / 2}" y="${(anchors.sy + anchors.ty) / 2 - 8}">${escapeHtml(edge.label)}</text>` : ""}
       </g>`;
     }).join("");
 
     const nodeMarkup = graph.nodes.map((node) => {
       const selected = state.selected && state.selected.type === "node" && state.selected.data.id === node.id;
       const highlighted = highlightIds.has(node.id);
-      const fields = node.fields.slice(0, 6).map((field, index) => {
-        return `<text x="12" y="${60 + index * 18}">${escapeHtml(field.name)}: ${escapeHtml(shortType(field.type))}</text>`;
-      }).join("");
-      const more = node.fields.length > 6 ? `<text class="kind" x="12" y="${60 + 6 * 18}">+ еще ${node.fields.length - 6}</text>` : "";
-      return `<g class="node ${selected ? "selected" : ""} ${highlighted ? "highlight" : ""}" data-node="${escapeAttr(node.id)}" transform="translate(${node.x}, ${node.y})">
+      const title = renderTextLines(node.rows.titleLines, 12, 24, "title");
+      const kind = renderTextLines(node.rows.kindLines, 12, 24 + node.rows.titleLines.length * 16, "kind");
+      const fieldStart = 48 + node.rows.titleLines.length * 16;
+      const fields = renderTextLines(node.rows.fieldRows, 12, fieldStart, "field");
+      const moreY = fieldStart + node.rows.fieldRows.length * 17;
+      const more = renderTextLines(node.rows.moreRows, 12, moreY, "kind");
+      return `<g class="node ${selected ? "selected" : ""} ${highlighted ? "highlight" : ""}" data-node="${escapeAttr(node.id)}" data-x="${node.x}" data-y="${node.y}" transform="translate(${node.x}, ${node.y})">
         <rect width="${node.width}" height="${node.height}" rx="8"></rect>
-        <text x="12" y="24" font-weight="700">${escapeHtml(node.name)}</text>
-        <text class="kind" x="12" y="42">${escapeHtml(readableKind(node.kind))}</text>
+        ${title}
+        ${kind}
         ${fields}${more}
       </g>`;
     }).join("");
@@ -546,28 +612,123 @@ enum Role {
     };
   }
 
+  function edgeAnchors(source, target) {
+    const sourceCenterX = source.x + source.width / 2;
+    const targetCenterX = target.x + target.width / 2;
+    const sourceCenterY = source.y + source.height / 2;
+    const targetCenterY = target.y + target.height / 2;
+    if (sourceCenterX <= targetCenterX) {
+      return {
+        sx: source.x + source.width,
+        sy: sourceCenterY,
+        tx: target.x,
+        ty: targetCenterY
+      };
+    }
+    return {
+      sx: source.x,
+      sy: sourceCenterY,
+      tx: target.x + target.width,
+      ty: targetCenterY
+    };
+  }
+
+  function renderTextLines(lines, x, y, className) {
+    return lines.map((line, index) => {
+      const classAttr = className ? ` class="${className}"` : "";
+      const weight = className === "title" ? ` font-weight="700"` : "";
+      const dy = className === "field" ? 17 : 16;
+      return `<text${classAttr}${weight} x="${x}" y="${y + index * dy}">${escapeHtml(line)}</text>`;
+    }).join("");
+  }
+
+  function wrapText(value, maxChars) {
+    const words = String(value || "").split(/\s+/).filter(Boolean);
+    const lines = [];
+    let line = "";
+
+    words.forEach((word) => {
+      const parts = breakLongWord(word, maxChars);
+      parts.forEach((part) => {
+        const next = line ? line + " " + part : part;
+        if (next.length > maxChars && line) {
+          lines.push(line);
+          line = part;
+        } else {
+          line = next;
+        }
+      });
+    });
+    if (line) lines.push(line);
+    return lines.length ? lines : [""];
+  }
+
+  function breakLongWord(word, maxChars) {
+    if (word.length <= maxChars) return [word];
+    const chunks = [];
+    for (let index = 0; index < word.length; index += maxChars - 1) {
+      const part = word.slice(index, index + maxChars - 1);
+      chunks.push(index + maxChars - 1 < word.length ? part + "-" : part);
+    }
+    return chunks;
+  }
+
+  function svgPoint(event) {
+    const rect = el.graphSvg.getBoundingClientRect();
+    return {
+      x: (event.clientX - rect.left - state.pan.x) / state.zoom,
+      y: (event.clientY - rect.top - state.pan.y) / state.zoom
+    };
+  }
+
   function bindPanZoom() {
-    let dragging = false;
+    let draggingCanvas = false;
+    let draggingNode = null;
     let last = { x: 0, y: 0 };
     el.graphSvg.addEventListener("mousedown", (event) => {
-      dragging = true;
+      const nodeEl = event.target.closest("[data-node]");
+      if (nodeEl) {
+        const point = svgPoint(event);
+        const current = state.nodePositions[nodeEl.dataset.node] || {
+          x: Number(nodeEl.dataset.x) || 0,
+          y: Number(nodeEl.dataset.y) || 0
+        };
+        draggingNode = {
+          id: nodeEl.dataset.node,
+          offsetX: point.x - current.x,
+          offsetY: point.y - current.y
+        };
+        event.stopPropagation();
+        return;
+      }
+      draggingCanvas = true;
       last = { x: event.clientX, y: event.clientY };
     });
     window.addEventListener("mousemove", (event) => {
-      if (!dragging) return;
+      if (draggingNode) {
+        const point = svgPoint(event);
+        state.nodePositions[draggingNode.id] = {
+          x: point.x - draggingNode.offsetX,
+          y: point.y - draggingNode.offsetY
+        };
+        scheduleRender();
+        return;
+      }
+      if (!draggingCanvas) return;
       state.pan.x += event.clientX - last.x;
       state.pan.y += event.clientY - last.y;
       last = { x: event.clientX, y: event.clientY };
-      render();
+      scheduleRender();
     });
     window.addEventListener("mouseup", () => {
-      dragging = false;
+      draggingCanvas = false;
+      draggingNode = null;
     });
     el.graphSvg.addEventListener("wheel", (event) => {
       event.preventDefault();
       const factor = event.deltaY > 0 ? 0.9 : 1.1;
       state.zoom = Math.min(2.4, Math.max(0.35, state.zoom * factor));
-      render();
+      scheduleRender();
     }, { passive: false });
   }
 
