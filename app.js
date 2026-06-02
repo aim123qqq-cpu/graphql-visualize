@@ -1,10 +1,7 @@
 (function () {
   "use strict";
 
-  const sampleSchema = `schema {
-  query: Query
-  mutation: Mutation
-}
+  const sampleSchema = `schema { query: Query mutation: Mutation }
 
 type Query {
   users: [User!]!
@@ -43,23 +40,15 @@ input CreateUserInput {
   role: Role = STUDENT
 }
 
-enum Role {
-  STUDENT
-  TEACHER
-  ADMIN
-}`;
+enum Role { STUDENT TEACHER ADMIN }`;
 
   const introspectionQuery = `{
     __schema {
       types {
-        kind
-        name
-        description
+        kind name description
         fields(includeDeprecated: true) {
-          name
-          description
+          name description
           type { kind name ofType { kind name ofType { kind name ofType { kind name } } } }
-          args { name type { kind name ofType { kind name ofType { kind name } } } }
         }
         inputFields { name type { kind name ofType { kind name ofType { kind name } } } }
         enumValues(includeDeprecated: true) { name description }
@@ -74,89 +63,92 @@ enum Role {
     mode: "types",
     zoom: 1,
     pan: { x: 40, y: 40 },
-    nodePositions: {},
-    renderFrame: 0,
+    positions: {},
     selected: null,
-    search: ""
+    search: "",
+    frame: 0
   };
 
+  const $ = (id) => document.getElementById(id);
   const el = {
-    schemaInput: document.getElementById("schemaInput"),
-    buildBtn: document.getElementById("buildBtn"),
-    sampleBtn: document.getElementById("sampleBtn"),
-    clearBtn: document.getElementById("clearBtn"),
-    fileInput: document.getElementById("fileInput"),
-    fileName: document.getElementById("fileName"),
-    endpointInput: document.getElementById("endpointInput"),
-    authInput: document.getElementById("authInput"),
-    loadEndpointBtn: document.getElementById("loadEndpointBtn"),
-    accentInput: document.getElementById("accentInput"),
-    densityInput: document.getElementById("densityInput"),
-    showScalars: document.getElementById("showScalars"),
-    showBuiltins: document.getElementById("showBuiltins"),
-    searchInput: document.getElementById("searchInput"),
-    graphSvg: document.getElementById("graphSvg"),
-    emptyState: document.getElementById("emptyState"),
-    stats: document.getElementById("stats"),
-    details: document.getElementById("details"),
-    warnings: document.getElementById("warnings"),
-    exportDotBtn: document.getElementById("exportDotBtn"),
-    exportSvgBtn: document.getElementById("exportSvgBtn"),
-    exportPngBtn: document.getElementById("exportPngBtn")
+    schema: $("schemaInput"),
+    build: $("buildBtn"),
+    sample: $("sampleBtn"),
+    clear: $("clearBtn"),
+    optimize: $("optimizeBtn"),
+    file: $("fileInput"),
+    fileName: $("fileName"),
+    endpoint: $("endpointInput"),
+    auth: $("authInput"),
+    loadEndpoint: $("loadEndpointBtn"),
+    accent: $("accentInput"),
+    density: $("densityInput"),
+    showScalars: $("showScalars"),
+    showBuiltins: $("showBuiltins"),
+    search: $("searchInput"),
+    svg: $("graphSvg"),
+    empty: $("emptyState"),
+    stats: $("stats"),
+    details: $("details"),
+    warnings: $("warnings"),
+    dot: $("exportDotBtn"),
+    svgExport: $("exportSvgBtn"),
+    png: $("exportPngBtn")
   };
 
   function init() {
-    el.schemaInput.value = sampleSchema;
+    el.schema.value = sampleSchema;
     bindEvents();
     buildGraph();
   }
 
   function bindEvents() {
     document.querySelectorAll(".tab").forEach((button) => {
-      button.addEventListener("click", () => activateTab(button.dataset.tab));
+      button.onclick = () => activateTab(button.dataset.tab);
     });
     document.querySelectorAll(".mode").forEach((button) => {
-      button.addEventListener("click", () => {
+      button.onclick = () => {
         state.mode = button.dataset.mode;
         document.querySelectorAll(".mode").forEach((item) => item.classList.toggle("active", item === button));
         render();
-      });
+      };
     });
-    el.buildBtn.addEventListener("click", buildGraph);
-    el.sampleBtn.addEventListener("click", () => {
-      el.schemaInput.value = sampleSchema;
+    el.build.onclick = buildGraph;
+    el.sample.onclick = () => {
+      el.schema.value = sampleSchema;
       buildGraph();
-    });
-    el.clearBtn.addEventListener("click", () => {
-      el.schemaInput.value = "";
+    };
+    el.clear.onclick = () => {
+      el.schema.value = "";
       state.graph = { nodes: [], edges: [], warnings: [] };
-      state.nodePositions = {};
+      state.positions = {};
       state.selected = null;
       render();
-    });
-    el.fileInput.addEventListener("change", loadFile);
-    el.loadEndpointBtn.addEventListener("click", loadEndpoint);
-    el.accentInput.addEventListener("input", () => {
-      document.documentElement.style.setProperty("--accent", el.accentInput.value);
+    };
+    el.optimize.onclick = optimizeGraph;
+    el.file.onchange = loadFile;
+    el.loadEndpoint.onclick = loadEndpoint;
+    el.accent.oninput = () => {
+      document.documentElement.style.setProperty("--accent", el.accent.value);
       render();
-    });
-    el.densityInput.addEventListener("input", render);
-    el.showScalars.addEventListener("change", render);
-    el.showBuiltins.addEventListener("change", render);
-    el.searchInput.addEventListener("input", () => {
-      state.search = el.searchInput.value.trim().toLowerCase();
+    };
+    el.density.oninput = render;
+    el.showScalars.onchange = render;
+    el.showBuiltins.onchange = render;
+    el.search.oninput = () => {
+      state.search = el.search.value.trim().toLowerCase();
       render();
-    });
-    el.exportDotBtn.addEventListener("click", () => downloadText("schema.dot", toDot(state.graph)));
-    el.exportSvgBtn.addEventListener("click", exportSvg);
-    el.exportPngBtn.addEventListener("click", exportPng);
-    bindPanZoom();
+    };
+    el.dot.onclick = () => downloadText("schema.dot", toDot(state.graph));
+    el.svgExport.onclick = () => downloadText("schema.svg", `<?xml version="1.0" encoding="UTF-8"?>\n${el.svg.outerHTML}`);
+    el.png.onclick = exportPng;
+    bindDrag();
   }
 
   function activateTab(name) {
     document.querySelectorAll(".tab").forEach((button) => button.classList.toggle("active", button.dataset.tab === name));
     document.querySelectorAll(".tab-page").forEach((page) => page.classList.remove("active"));
-    document.getElementById(name + "Page").classList.add("active");
+    $(name + "Page").classList.add("active");
   }
 
   function loadFile(event) {
@@ -165,7 +157,7 @@ enum Role {
     el.fileName.textContent = file.name;
     const reader = new FileReader();
     reader.onload = () => {
-      el.schemaInput.value = String(reader.result || "");
+      el.schema.value = String(reader.result || "");
       activateTab("schema");
       buildGraph();
     };
@@ -173,45 +165,35 @@ enum Role {
   }
 
   async function loadEndpoint() {
-    const url = el.endpointInput.value.trim();
-    if (!url) {
-      showWarnings(["Укажите URL GraphQL сервера."]);
-      return;
-    }
-    el.loadEndpointBtn.disabled = true;
-    el.loadEndpointBtn.textContent = "Загружаю...";
+    const url = el.endpoint.value.trim();
+    if (!url) return showWarnings(["Укажите URL GraphQL сервера."]);
+    el.loadEndpoint.disabled = true;
+    el.loadEndpoint.textContent = "Загружаю...";
     try {
       const headers = { "Content-Type": "application/json" };
-      const auth = el.authInput.value.trim();
-      if (auth) headers.Authorization = auth;
-      const response = await fetch(url, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ query: introspectionQuery })
-      });
+      if (el.auth.value.trim()) headers.Authorization = el.auth.value.trim();
+      const response = await fetch(url, { method: "POST", headers, body: JSON.stringify({ query: introspectionQuery }) });
       if (!response.ok) throw new Error("HTTP " + response.status);
-      const json = await response.json();
-      el.schemaInput.value = JSON.stringify(json, null, 2);
+      el.schema.value = JSON.stringify(await response.json(), null, 2);
       activateTab("schema");
       buildGraph();
     } catch (error) {
       showWarnings(["Не удалось загрузить endpoint: " + error.message, "Частая причина: сервер не разрешает CORS для браузера."]);
     } finally {
-      el.loadEndpointBtn.disabled = false;
-      el.loadEndpointBtn.textContent = "Загрузить introspection";
+      el.loadEndpoint.disabled = false;
+      el.loadEndpoint.textContent = "Загрузить introspection";
     }
   }
 
   function buildGraph() {
-    const raw = el.schemaInput.value.trim();
+    const raw = el.schema.value.trim();
     if (!raw) {
       state.graph = { nodes: [], edges: [], warnings: ["Вставьте схему или JSON introspection."] };
-      render();
-      return;
+      return render();
     }
     try {
       state.graph = raw[0] === "{" ? parseIntrospection(JSON.parse(raw)) : parseSdl(raw);
-      state.nodePositions = {};
+      state.positions = {};
       state.selected = null;
       state.zoom = 1;
       state.pan = { x: 40, y: 40 };
@@ -222,60 +204,44 @@ enum Role {
   }
 
   function parseSdl(raw) {
-    const text = raw
-      .replace(/#[^\n\r]*/g, "")
-      .replace(/"""[\s\S]*?"""/g, "")
-      .replace(/'[\s\S]*?'/g, "");
+    const text = raw.replace(/#[^\n\r]*/g, "").replace(/"""[\s\S]*?"""/g, "");
     const nodes = new Map();
     const edges = [];
     const warnings = [];
-    const definitions = /(?:extend\s+)?(type|interface|input|enum)\s+([_A-Za-z][_0-9A-Za-z]*)[^{]*\{([\s\S]*?)\}|(?:extend\s+)?union\s+([_A-Za-z][_0-9A-Za-z]*)\s*=\s*([^\n\r]+)|scalar\s+([_A-Za-z][_0-9A-Za-z]*)/g;
+    const defs = /(?:extend\s+)?(type|interface|input|enum)\s+([_A-Za-z][_0-9A-Za-z]*)[^{]*\{([\s\S]*?)\}|(?:extend\s+)?union\s+([_A-Za-z][_0-9A-Za-z]*)\s*=\s*([^\n\r]+)|scalar\s+([_A-Za-z][_0-9A-Za-z]*)/g;
     let match;
-
-    while ((match = definitions.exec(text))) {
+    while ((match = defs.exec(text))) {
       const kind = match[1] ? match[1].toUpperCase() : match[4] ? "UNION" : "SCALAR";
       const name = match[2] || match[4] || match[6];
-      const body = match[3] || "";
-      const unionBody = match[5] || "";
       const node = ensureNode(nodes, name, kind);
-
       if (kind === "UNION") {
-        unionBody.split("|").map((item) => item.trim()).filter(Boolean).forEach((target) => {
+        match[5].split("|").map((item) => item.trim()).filter(Boolean).forEach((target) => {
           node.fields.push({ name: target, type: target });
-          edges.push(makeEdge(name, target, "union"));
-        });
-      } else if (kind !== "SCALAR" && kind !== "ENUM") {
-        parseFields(body).forEach((field) => {
-          node.fields.push(field);
-          const target = unwrapType(field.type);
-          if (target && target !== name) edges.push(makeEdge(name, target, field.name));
+          edges.push(edge(name, target, "union"));
         });
       } else if (kind === "ENUM") {
-        node.fields = body.split(/\s+/).map((value) => value.trim()).filter(Boolean).map((value) => ({ name: value, type: "enum value" }));
+        node.fields = match[3].split(/\s+/).filter(Boolean).map((name) => ({ name, type: "enum value" }));
+      } else if (kind !== "SCALAR") {
+        parseFields(match[3]).forEach((field) => {
+          node.fields.push(field);
+          const target = unwrapType(field.type);
+          if (target && target !== name) edges.push(edge(name, target, field.name));
+        });
       }
     }
-
-    edges.forEach((edge) => {
-      if (!nodes.has(edge.target)) ensureNode(nodes, edge.target, guessKind(edge.target));
+    edges.forEach((item) => {
+      if (!nodes.has(item.target)) ensureNode(nodes, item.target, guessKind(item.target));
     });
-
     addWarnings(nodes, edges, warnings);
-    return { nodes: Array.from(nodes.values()), edges: uniqueEdges(edges), warnings };
+    return { nodes: [...nodes.values()], edges: uniqueEdges(edges), warnings };
   }
 
   function parseFields(body) {
-    return body
-      .split(/\n|;/)
-      .map((line) => line.trim())
-      .filter((line) => line && !line.startsWith("}"))
-      .map((line) => line.replace(/\s+/g, " "))
-      .map((line) => {
-        const cleaned = line.replace(/@[_A-Za-z][_0-9A-Za-z]*(\([^)]*\))?/g, "").trim();
-        const nameMatch = cleaned.match(/^([_A-Za-z][_0-9A-Za-z]*)\s*(?:\([^)]*\))?\s*:\s*([^=]+)(?:=.*)?$/);
-        if (!nameMatch) return null;
-        return { name: nameMatch[1], type: nameMatch[2].trim() };
-      })
-      .filter(Boolean);
+    return body.split(/\n|;/).map((line) => line.trim()).filter(Boolean).map((line) => {
+      const clean = line.replace(/@[_A-Za-z][_0-9A-Za-z]*(\([^)]*\))?/g, "").replace(/\s+/g, " ");
+      const match = clean.match(/^([_A-Za-z][_0-9A-Za-z]*)\s*(?:\([^)]*\))?\s*:\s*([^=]+)(?:=.*)?$/);
+      return match ? { name: match[1], type: match[2].trim() } : null;
+    }).filter(Boolean);
   }
 
   function parseIntrospection(json) {
@@ -284,61 +250,46 @@ enum Role {
     const nodes = new Map();
     const edges = [];
     const warnings = [];
-
     schema.types.forEach((type) => {
       if (!type || !type.name) return;
       const node = ensureNode(nodes, type.name, type.kind);
       node.description = type.description || "";
-      const fields = type.fields || type.inputFields || [];
-      fields.forEach((field) => {
-        const typeName = typeRefName(field.type);
-        const typeText = typeRefText(field.type);
-        node.fields.push({ name: field.name, type: typeText });
-        if (typeName && typeName !== type.name) edges.push(makeEdge(type.name, typeName, field.name));
+      (type.fields || type.inputFields || []).forEach((field) => {
+        const target = typeRefName(field.type);
+        node.fields.push({ name: field.name, type: typeRefText(field.type) });
+        if (target && target !== type.name) edges.push(edge(type.name, target, field.name));
       });
       (type.enumValues || []).forEach((value) => node.fields.push({ name: value.name, type: "enum value" }));
-      (type.interfaces || []).forEach((iface) => edges.push(makeEdge(type.name, iface.name, "implements")));
-      (type.possibleTypes || []).forEach((possible) => edges.push(makeEdge(type.name, possible.name, "possible")));
+      (type.interfaces || []).forEach((item) => edges.push(edge(type.name, item.name, "implements")));
+      (type.possibleTypes || []).forEach((item) => edges.push(edge(type.name, item.name, "possible")));
     });
-
     addWarnings(nodes, edges, warnings);
-    return { nodes: Array.from(nodes.values()), edges: uniqueEdges(edges), warnings };
+    return { nodes: [...nodes.values()], edges: uniqueEdges(edges), warnings };
   }
 
   function ensureNode(map, name, kind) {
-    if (!map.has(name)) {
-      map.set(name, { id: name, name, kind, fields: [], description: "" });
-    }
+    if (!map.has(name)) map.set(name, { id: name, name, kind, fields: [], description: "" });
     return map.get(name);
   }
 
-  function makeEdge(source, target, label) {
+  function edge(source, target, label) {
     return { id: source + "->" + target + ":" + label, source, target, label };
   }
 
   function uniqueEdges(edges) {
     const seen = new Set();
-    return edges.filter((edge) => {
-      const key = edge.source + "|" + edge.target + "|" + edge.label;
+    return edges.filter((item) => {
+      const key = item.source + "|" + item.target + "|" + item.label;
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
     });
   }
 
-  function guessKind(name) {
-    return ["String", "Int", "Float", "Boolean", "ID"].includes(name) ? "SCALAR" : "OBJECT";
-  }
-
-  function unwrapType(type) {
-    return String(type).replace(/[![\]\s]/g, "").split("|")[0];
-  }
-
   function typeRefName(ref) {
-    let current = ref;
-    while (current) {
-      if (current.name) return current.name;
-      current = current.ofType;
+    while (ref) {
+      if (ref.name) return ref.name;
+      ref = ref.ofType;
     }
     return "";
   }
@@ -350,96 +301,79 @@ enum Role {
     return ref.name || ref.kind || "";
   }
 
-  function addWarnings(nodes, edges, warnings) {
-    const names = new Set(nodes.keys());
-    edges.forEach((edge) => {
-      if (!names.has(edge.target)) warnings.push("Тип " + edge.target + " используется, но не объявлен явно.");
-    });
-    if (!names.has("Query")) warnings.push("Тип Query не найден. Для GraphQL API он обычно обязателен.");
-    const isolated = Array.from(nodes.values()).filter((node) => {
-      if (isBuiltin(node.name)) return false;
-      return !edges.some((edge) => edge.source === node.name || edge.target === node.name);
-    });
-    if (isolated.length) warnings.push("Изолированные типы: " + isolated.map((node) => node.name).join(", ") + ".");
-    if (!warnings.length) warnings.push("Критичных проблем не найдено.");
+  function unwrapType(type) {
+    return String(type).replace(/[![\]\s]/g, "");
   }
 
-  function visibleGraph() {
-    const showScalars = el.showScalars.checked;
-    const showBuiltins = el.showBuiltins.checked;
-    const allowed = new Set();
-    state.graph.nodes.forEach((node) => {
-      if (!showBuiltins && isBuiltin(node.name)) return;
-      if (!showScalars && ["SCALAR", "ENUM"].includes(node.kind)) return;
-      allowed.add(node.id);
-    });
-    let edges = state.graph.edges.filter((edge) => allowed.has(edge.source) && allowed.has(edge.target));
-    if (state.mode === "types") {
-      edges = uniqueEdges(edges.map((edge) => makeEdge(edge.source, edge.target, "")));
-    } else if (state.mode === "fields") {
-      edges = edges.filter((edge) => edge.label);
-    }
-    const nodes = state.graph.nodes.filter((node) => allowed.has(node.id));
-    return layout(nodes, edges);
+  function guessKind(name) {
+    return ["String", "Int", "Float", "Boolean", "ID"].includes(name) ? "SCALAR" : "OBJECT";
+  }
+
+  function addWarnings(nodes, edges, warnings) {
+    if (!nodes.has("Query")) warnings.push("Тип Query не найден. Для GraphQL API он обычно обязателен.");
+    const isolated = [...nodes.values()].filter((node) => !isBuiltin(node.name) && !edges.some((item) => item.source === node.name || item.target === node.name));
+    if (isolated.length) warnings.push("Изолированные типы: " + isolated.map((node) => node.name).join(", ") + ".");
+    if (!warnings.length) warnings.push("Критичных проблем не найдено.");
   }
 
   function isBuiltin(name) {
     return ["String", "Int", "Float", "Boolean", "ID"].includes(name) || String(name).startsWith("__");
   }
 
-  function layout(nodes, edges) {
-    const density = Number(el.densityInput.value) / 100;
-    const metrics = new Map(nodes.map((node) => [node.id, nodeMetrics(node)]));
-    const indegree = new Map(nodes.map((node) => [node.id, 0]));
-    const outgoing = new Map(nodes.map((node) => [node.id, []]));
-
-    edges.forEach((edge) => {
-      if (!indegree.has(edge.source) || !indegree.has(edge.target)) return;
-      indegree.set(edge.target, indegree.get(edge.target) + 1);
-      outgoing.get(edge.source).push(edge.target);
+  function visibleGraph() {
+    const allowed = new Set();
+    state.graph.nodes.forEach((node) => {
+      if (!el.showBuiltins.checked && isBuiltin(node.name)) return;
+      if (!el.showScalars.checked && ["SCALAR", "ENUM"].includes(node.kind)) return;
+      allowed.add(node.id);
     });
+    let edges = state.graph.edges.filter((item) => allowed.has(item.source) && allowed.has(item.target));
+    if (state.mode === "types") edges = uniqueEdges(edges.map((item) => edge(item.source, item.target, "")));
+    if (state.mode === "fields") edges = edges.filter((item) => item.label);
+    return layout(state.graph.nodes.filter((node) => allowed.has(node.id)), edges);
+  }
 
-    const levels = assignLevels(nodes, indegree, outgoing);
-    const byLevel = new Map();
+  function layout(nodes, edges) {
+    const density = Number(el.density.value) / 100;
+    const outgoing = new Map(nodes.map((node) => [node.id, []]));
+    const indegree = new Map(nodes.map((node) => [node.id, 0]));
+    edges.forEach((item) => {
+      if (!outgoing.has(item.source) || !indegree.has(item.target)) return;
+      outgoing.get(item.source).push(item.target);
+      indegree.set(item.target, indegree.get(item.target) + 1);
+    });
+    const levels = assignLevels(nodes, outgoing, indegree);
+    const columns = new Map();
     nodes.forEach((node) => {
       const level = levels.get(node.id) || 0;
-      if (!byLevel.has(level)) byLevel.set(level, []);
-      byLevel.get(level).push(node);
+      if (!columns.has(level)) columns.set(level, []);
+      columns.get(level).push(node);
     });
-
-    const positioned = [];
-    Array.from(byLevel.keys()).sort((a, b) => a - b).forEach((level) => {
-      const list = byLevel.get(level).sort((a, b) => {
-        const kindCompare = kindWeight(a.kind) - kindWeight(b.kind);
-        return kindCompare || a.name.localeCompare(b.name);
-      });
+    const result = [];
+    [...columns.keys()].sort((a, b) => a - b).forEach((level) => {
       let y = 0;
-      list.forEach((node) => {
-        const metric = metrics.get(node.id);
-        const saved = state.nodePositions[node.id];
-        const x = saved ? saved.x : level * 300 * density;
-        const nextY = saved ? saved.y : y;
-        positioned.push({ ...node, ...metric, x, y: nextY });
+      columns.get(level).sort((a, b) => kindWeight(a.kind) - kindWeight(b.kind) || a.name.localeCompare(b.name)).forEach((node) => {
+        const metric = nodeMetric(node);
+        const saved = state.positions[node.id];
+        result.push({ ...node, ...metric, x: saved ? saved.x : level * 300 * density, y: saved ? saved.y : y });
         y += metric.height + 34 * density;
       });
     });
-    return { nodes: positioned, edges };
+    return { nodes: result, edges };
   }
 
-  function assignLevels(nodes, indegree, outgoing) {
+  function assignLevels(nodes, outgoing, indegree) {
     const levels = new Map();
-    const queue = nodes
-      .filter((node) => node.name === "Query" || node.name === "Mutation" || node.name === "Subscription" || indegree.get(node.id) === 0)
-      .sort((a, b) => rootWeight(a.name) - rootWeight(b.name) || a.name.localeCompare(b.name));
-
+    const queue = nodes.filter((node) => ["Query", "Mutation", "Subscription"].includes(node.name) || indegree.get(node.id) === 0);
+    queue.sort((a, b) => rootWeight(a.name) - rootWeight(b.name) || a.name.localeCompare(b.name));
     queue.forEach((node) => levels.set(node.id, 0));
     for (let index = 0; index < queue.length; index += 1) {
       const node = queue[index];
-      const nextLevel = (levels.get(node.id) || 0) + 1;
-      (outgoing.get(node.id) || []).forEach((targetId) => {
-        if (!levels.has(targetId) || nextLevel < levels.get(targetId)) {
-          levels.set(targetId, nextLevel);
-          const target = nodes.find((item) => item.id === targetId);
+      (outgoing.get(node.id) || []).forEach((id) => {
+        const nextLevel = (levels.get(node.id) || 0) + 1;
+        if (!levels.has(id) || nextLevel < levels.get(id)) {
+          levels.set(id, nextLevel);
+          const target = nodes.find((item) => item.id === id);
           if (target && !queue.includes(target)) queue.push(target);
         }
       });
@@ -450,58 +384,78 @@ enum Role {
     return levels;
   }
 
-  function rootWeight(name) {
-    const order = { Query: 0, Mutation: 1, Subscription: 2 };
-    return Object.prototype.hasOwnProperty.call(order, name) ? order[name] : 10;
+  function optimizeGraph() {
+    const graph = visibleGraph();
+    const density = Number(el.density.value) / 100;
+    const levels = new Map();
+    graph.nodes.forEach((node) => {
+      const level = Math.max(0, Math.round(node.x / (300 * density)));
+      if (!levels.has(level)) levels.set(level, []);
+      levels.get(level).push(node);
+    });
+    let order = new Map(graph.nodes.map((node, index) => [node.id, index]));
+    const sortedLevels = [...levels.keys()].sort((a, b) => a - b);
+    for (let pass = 0; pass < 5; pass += 1) {
+      sortedLevels.forEach((level) => {
+        levels.get(level).sort((a, b) => barycenter(a.id, graph.edges, order) - barycenter(b.id, graph.edges, order) || a.name.localeCompare(b.name));
+      });
+      order = rebuildOrder(levels, sortedLevels);
+    }
+    state.positions = {};
+    sortedLevels.forEach((level) => {
+      let y = 0;
+      levels.get(level).forEach((node, index) => {
+        state.positions[node.id] = { x: level * 320 * density, y: y + (index % 2 ? 14 : 0) };
+        y += node.height + 46 * density;
+      });
+    });
+    state.selected = null;
+    state.pan = { x: 40, y: 40 };
+    render();
   }
 
-  function kindWeight(kind) {
-    const order = { OBJECT: 0, INTERFACE: 1, INPUT_OBJECT: 2, INPUT: 2, UNION: 3, ENUM: 4, SCALAR: 5 };
-    return Object.prototype.hasOwnProperty.call(order, kind) ? order[kind] : 6;
+  function barycenter(id, edges, order) {
+    const neighbors = edges.filter((item) => item.source === id || item.target === id).map((item) => item.source === id ? item.target : item.source).filter((item) => order.has(item));
+    if (!neighbors.length) return order.get(id) || 0;
+    return neighbors.reduce((sum, item) => sum + order.get(item), 0) / neighbors.length;
   }
 
-  function nodeMetrics(node) {
-    const width = 232;
-    const titleLines = wrapText(node.name, 24);
+  function rebuildOrder(levels, sortedLevels) {
+    const order = new Map();
+    let index = 0;
+    sortedLevels.forEach((level) => levels.get(level).forEach((node) => order.set(node.id, index++)));
+    return order;
+  }
+
+  function nodeMetric(node) {
+    const titleLines = wrap(node.name, 24);
     const kindLines = [readableKind(node.kind)];
-    const fieldRows = node.fields.slice(0, 7).flatMap((field) => wrapText(field.name + ": " + shortType(field.type), 28));
-    const moreRows = node.fields.length > 7 ? ["+ еще " + (node.fields.length - 7)] : [];
-    const rows = { titleLines, kindLines, fieldRows, moreRows };
-    const height = Math.max(88, 22 + titleLines.length * 16 + kindLines.length * 16 + fieldRows.length * 17 + moreRows.length * 17);
-    return { width, height, rows };
+    const fieldLines = node.fields.slice(0, 7).flatMap((field) => wrap(field.name + ": " + shortType(field.type), 28));
+    const moreLines = node.fields.length > 7 ? ["+ еще " + (node.fields.length - 7)] : [];
+    const height = Math.max(88, 22 + titleLines.length * 16 + kindLines.length * 16 + fieldLines.length * 17 + moreLines.length * 17);
+    return { width: 232, height, rows: { titleLines, kindLines, fieldLines, moreLines } };
   }
 
   function render() {
-    state.renderFrame = 0;
+    state.frame = 0;
     const graph = visibleGraph();
     renderStats(graph);
-    renderWarnings(state.graph.warnings);
+    showWarnings(state.graph.warnings);
     renderDetails();
     renderSvg(graph);
   }
 
   function scheduleRender() {
-    if (state.renderFrame) return;
-    state.renderFrame = window.requestAnimationFrame(render);
+    if (!state.frame) state.frame = requestAnimationFrame(render);
   }
 
   function renderStats(graph) {
-    const fieldCount = graph.nodes.reduce((sum, node) => sum + node.fields.length, 0);
-    el.stats.innerHTML = `
-      <div><strong>${graph.nodes.length}</strong><span>типов</span></div>
-      <div><strong>${graph.edges.length}</strong><span>связей</span></div>
-      <div><strong>${fieldCount}</strong><span>полей</span></div>`;
-  }
-
-  function renderWarnings(warnings) {
-    showWarnings(warnings);
+    const fields = graph.nodes.reduce((sum, node) => sum + node.fields.length, 0);
+    el.stats.innerHTML = `<div><strong>${graph.nodes.length}</strong><span>типов</span></div><div><strong>${graph.edges.length}</strong><span>связей</span></div><div><strong>${fields}</strong><span>полей</span></div>`;
   }
 
   function showWarnings(warnings) {
-    el.warnings.innerHTML = warnings.map((item) => {
-      const bad = item.includes("Ошибка") || item.includes("не ") || item.includes("Не ");
-      return `<li class="${bad ? "bad" : ""}">${escapeHtml(item)}</li>`;
-    }).join("");
+    el.warnings.innerHTML = warnings.map((item) => `<li class="${item.includes("не ") || item.includes("Не ") || item.includes("Ошибка") ? "bad" : ""}">${escapeHtml(item)}</li>`).join("");
   }
 
   function renderDetails() {
@@ -510,239 +464,174 @@ enum Role {
       return;
     }
     if (state.selected.type === "edge") {
-      const edge = state.selected.data;
-      el.details.innerHTML = `
-        <div class="detail-card">
-          <h3>${escapeHtml(edge.source)} -> ${escapeHtml(edge.target)}</h3>
-          <p class="muted">Связь через поле: ${escapeHtml(edge.label || "тип")}</p>
-        </div>`;
+      const item = state.selected.data;
+      el.details.innerHTML = `<div class="detail-card"><h3>${escapeHtml(item.source)} -> ${escapeHtml(item.target)}</h3><p class="muted">Связь через поле: ${escapeHtml(item.label || "тип")}</p></div>`;
       return;
     }
     const node = state.selected.data;
-    el.details.innerHTML = `
-      <div class="detail-card">
-        <h3>${escapeHtml(node.name)}</h3>
-        <p class="muted">${escapeHtml(readableKind(node.kind))}</p>
-        ${node.description ? `<p>${escapeHtml(node.description)}</p>` : ""}
-        <ul class="field-list">
-          ${node.fields.slice(0, 40).map((field) => `<li><strong>${escapeHtml(field.name)}</strong>: ${escapeHtml(field.type)}</li>`).join("")}
-        </ul>
-      </div>`;
+    el.details.innerHTML = `<div class="detail-card"><h3>${escapeHtml(node.name)}</h3><p class="muted">${escapeHtml(readableKind(node.kind))}</p><ul class="field-list">${node.fields.slice(0, 40).map((field) => `<li><strong>${escapeHtml(field.name)}</strong>: ${escapeHtml(field.type)}</li>`).join("")}</ul></div>`;
   }
 
   function renderSvg(graph) {
-    el.emptyState.classList.toggle("hidden", graph.nodes.length > 0);
-    const svg = el.graphSvg;
-    const maxX = Math.max(800, ...graph.nodes.map((node) => node.x + node.width + 80));
-    const maxY = Math.max(520, ...graph.nodes.map((node) => node.y + node.height + 80));
-    svg.setAttribute("viewBox", `0 0 ${Math.max(800, svg.clientWidth)} ${Math.max(520, svg.clientHeight)}`);
+    el.empty.classList.toggle("hidden", graph.nodes.length > 0);
     const nodeById = new Map(graph.nodes.map((node) => [node.id, node]));
-    const search = state.search;
-    const highlightIds = new Set();
-    if (search) {
+    const found = new Set();
+    if (state.search) {
       graph.nodes.forEach((node) => {
-        const haystack = [node.name, node.kind, ...node.fields.map((field) => field.name + " " + field.type)].join(" ").toLowerCase();
-        if (haystack.includes(search)) highlightIds.add(node.id);
+        const text = [node.name, node.kind, ...node.fields.map((field) => field.name + " " + field.type)].join(" ").toLowerCase();
+        if (text.includes(state.search)) found.add(node.id);
       });
     }
-
-    const edgeMarkup = graph.edges.map((edge) => {
-      const source = nodeById.get(edge.source);
-      const target = nodeById.get(edge.target);
+    const groups = edgeGroups(graph.edges);
+    const edges = graph.edges.map((item) => {
+      const source = nodeById.get(item.source);
+      const target = nodeById.get(item.target);
       if (!source || !target) return "";
-      const anchors = edgeAnchors(source, target);
-      const mid = Math.max(44, Math.abs(anchors.tx - anchors.sx) / 2);
-      const d = `M ${anchors.sx} ${anchors.sy} C ${anchors.sx + mid} ${anchors.sy}, ${anchors.tx - mid} ${anchors.ty}, ${anchors.tx} ${anchors.ty}`;
-      const selected = state.selected && state.selected.type === "edge" && state.selected.data.id === edge.id;
-      const highlighted = highlightIds.has(edge.source) || highlightIds.has(edge.target);
-      return `<g class="edge-group ${selected ? "selected" : ""}" data-edge="${escapeAttr(edge.id)}">
-        <path class="edge ${selected ? "selected" : ""} ${highlighted ? "highlight" : ""}" d="${d}"></path>
-        ${edge.label ? `<text class="edge-label" x="${(anchors.sx + anchors.tx) / 2}" y="${(anchors.sy + anchors.ty) / 2 - 8}">${escapeHtml(edge.label)}</text>` : ""}
-      </g>`;
+      const a = anchors(source, target);
+      const lane = edgeLane(item, groups);
+      const mid = Math.max(44, Math.abs(a.tx - a.sx) / 2);
+      const d = `M ${a.sx} ${a.sy} C ${a.sx + mid} ${a.sy + lane}, ${a.tx - mid} ${a.ty + lane}, ${a.tx} ${a.ty}`;
+      const selected = state.selected && state.selected.type === "edge" && state.selected.data.id === item.id;
+      const highlighted = found.has(item.source) || found.has(item.target);
+      return `<g data-edge="${escapeAttr(item.id)}"><path class="edge ${selected ? "selected" : ""} ${highlighted ? "highlight" : ""}" d="${d}"></path>${item.label ? `<text class="edge-label" x="${(a.sx + a.tx) / 2}" y="${(a.sy + a.ty) / 2 + lane - 8}">${escapeHtml(item.label)}</text>` : ""}</g>`;
     }).join("");
-
-    const nodeMarkup = graph.nodes.map((node) => {
+    const nodes = graph.nodes.map((node) => {
       const selected = state.selected && state.selected.type === "node" && state.selected.data.id === node.id;
-      const highlighted = highlightIds.has(node.id);
-      const title = renderTextLines(node.rows.titleLines, 12, 24, "title");
-      const kind = renderTextLines(node.rows.kindLines, 12, 24 + node.rows.titleLines.length * 16, "kind");
-      const fieldStart = 48 + node.rows.titleLines.length * 16;
-      const fields = renderTextLines(node.rows.fieldRows, 12, fieldStart, "field");
-      const moreY = fieldStart + node.rows.fieldRows.length * 17;
-      const more = renderTextLines(node.rows.moreRows, 12, moreY, "kind");
-      return `<g class="node ${selected ? "selected" : ""} ${highlighted ? "highlight" : ""}" data-node="${escapeAttr(node.id)}" data-x="${node.x}" data-y="${node.y}" transform="translate(${node.x}, ${node.y})">
-        <rect width="${node.width}" height="${node.height}" rx="8"></rect>
-        ${title}
-        ${kind}
-        ${fields}${more}
-      </g>`;
+      const highlighted = found.has(node.id);
+      const title = textLines(node.rows.titleLines, 12, 24, "title");
+      const kind = textLines(node.rows.kindLines, 12, 24 + node.rows.titleLines.length * 16, "kind");
+      const start = 48 + node.rows.titleLines.length * 16;
+      const fields = textLines(node.rows.fieldLines, 12, start, "field");
+      const more = textLines(node.rows.moreLines, 12, start + node.rows.fieldLines.length * 17, "kind");
+      return `<g class="node ${selected ? "selected" : ""} ${highlighted ? "highlight" : ""}" data-node="${escapeAttr(node.id)}" data-x="${node.x}" data-y="${node.y}" transform="translate(${node.x}, ${node.y})"><rect width="${node.width}" height="${node.height}" rx="8"></rect>${title}${kind}${fields}${more}</g>`;
     }).join("");
-
-    svg.innerHTML = `
-      <defs>
-        <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-          <path d="M 0 0 L 10 5 L 0 10 z" fill="#8a94a6"></path>
-        </marker>
-      </defs>
-      <g transform="translate(${state.pan.x}, ${state.pan.y}) scale(${state.zoom})">
-        <rect x="-40" y="-40" width="${maxX + 80}" height="${maxY + 80}" fill="transparent"></rect>
-        ${edgeMarkup}
-        ${nodeMarkup}
-      </g>`;
-
-    svg.querySelectorAll("[data-node]").forEach((nodeEl) => {
-      nodeEl.addEventListener("click", (event) => {
-        event.stopPropagation();
-        const node = graph.nodes.find((item) => item.id === nodeEl.dataset.node);
-        state.selected = { type: "node", data: node };
-        render();
-      });
+    const maxX = Math.max(800, ...graph.nodes.map((node) => node.x + node.width + 80));
+    const maxY = Math.max(520, ...graph.nodes.map((node) => node.y + node.height + 80));
+    el.svg.setAttribute("viewBox", `0 0 ${Math.max(800, el.svg.clientWidth)} ${Math.max(520, el.svg.clientHeight)}`);
+    el.svg.innerHTML = `<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#8a94a6"></path></marker></defs><g transform="translate(${state.pan.x}, ${state.pan.y}) scale(${state.zoom})"><rect x="-40" y="-40" width="${maxX + 80}" height="${maxY + 80}" fill="transparent"></rect>${edges}${nodes}</g>`;
+    el.svg.querySelectorAll("[data-node]").forEach((nodeEl) => nodeEl.onclick = (event) => {
+      event.stopPropagation();
+      state.selected = { type: "node", data: graph.nodes.find((node) => node.id === nodeEl.dataset.node) };
+      render();
     });
-    svg.querySelectorAll("[data-edge]").forEach((edgeEl) => {
-      edgeEl.addEventListener("click", (event) => {
-        event.stopPropagation();
-        const edge = graph.edges.find((item) => item.id === edgeEl.dataset.edge);
-        state.selected = { type: "edge", data: edge };
-        render();
-      });
+    el.svg.querySelectorAll("[data-edge]").forEach((edgeEl) => edgeEl.onclick = (event) => {
+      event.stopPropagation();
+      state.selected = { type: "edge", data: graph.edges.find((item) => item.id === edgeEl.dataset.edge) };
+      render();
     });
-    svg.onclick = () => {
+    el.svg.onclick = () => {
       state.selected = null;
       render();
     };
   }
 
-  function edgeAnchors(source, target) {
-    const sourceCenterX = source.x + source.width / 2;
-    const targetCenterX = target.x + target.width / 2;
-    const sourceCenterY = source.y + source.height / 2;
-    const targetCenterY = target.y + target.height / 2;
-    if (sourceCenterX <= targetCenterX) {
-      return {
-        sx: source.x + source.width,
-        sy: sourceCenterY,
-        tx: target.x,
-        ty: targetCenterY
-      };
-    }
+  function anchors(source, target) {
+    const right = source.x + source.width / 2 <= target.x + target.width / 2;
     return {
-      sx: source.x,
-      sy: sourceCenterY,
-      tx: target.x + target.width,
-      ty: targetCenterY
+      sx: right ? source.x + source.width : source.x,
+      sy: source.y + source.height / 2,
+      tx: right ? target.x : target.x + target.width,
+      ty: target.y + target.height / 2
     };
   }
 
-  function renderTextLines(lines, x, y, className) {
-    return lines.map((line, index) => {
-      const classAttr = className ? ` class="${className}"` : "";
-      const weight = className === "title" ? ` font-weight="700"` : "";
-      const dy = className === "field" ? 17 : 16;
-      return `<text${classAttr}${weight} x="${x}" y="${y + index * dy}">${escapeHtml(line)}</text>`;
-    }).join("");
+  function edgeGroups(edges) {
+    const groups = new Map();
+    edges.forEach((item) => {
+      const key = item.source < item.target ? item.source + "|" + item.target : item.target + "|" + item.source;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(item.id);
+    });
+    return groups;
   }
 
-  function wrapText(value, maxChars) {
-    const words = String(value || "").split(/\s+/).filter(Boolean);
+  function edgeLane(item, groups) {
+    const key = item.source < item.target ? item.source + "|" + item.target : item.target + "|" + item.source;
+    const group = groups.get(key) || [item.id];
+    return (group.indexOf(item.id) - (group.length - 1) / 2) * 18;
+  }
+
+  function bindDrag() {
+    let movingNode = null;
+    let movingCanvas = false;
+    let last = { x: 0, y: 0 };
+    el.svg.onmousedown = (event) => {
+      const nodeEl = event.target.closest("[data-node]");
+      if (nodeEl) {
+        const point = svgPoint(event);
+        const current = state.positions[nodeEl.dataset.node] || { x: Number(nodeEl.dataset.x) || 0, y: Number(nodeEl.dataset.y) || 0 };
+        movingNode = { id: nodeEl.dataset.node, dx: point.x - current.x, dy: point.y - current.y };
+        event.stopPropagation();
+        return;
+      }
+      movingCanvas = true;
+      last = { x: event.clientX, y: event.clientY };
+    };
+    window.onmousemove = (event) => {
+      if (movingNode) {
+        const point = svgPoint(event);
+        state.positions[movingNode.id] = { x: point.x - movingNode.dx, y: point.y - movingNode.dy };
+        return scheduleRender();
+      }
+      if (!movingCanvas) return;
+      state.pan.x += event.clientX - last.x;
+      state.pan.y += event.clientY - last.y;
+      last = { x: event.clientX, y: event.clientY };
+      scheduleRender();
+    };
+    window.onmouseup = () => {
+      movingNode = null;
+      movingCanvas = false;
+    };
+    el.svg.onwheel = (event) => {
+      event.preventDefault();
+      state.zoom = Math.min(2.4, Math.max(0.35, state.zoom * (event.deltaY > 0 ? 0.9 : 1.1)));
+      scheduleRender();
+    };
+  }
+
+  function svgPoint(event) {
+    const rect = el.svg.getBoundingClientRect();
+    return { x: (event.clientX - rect.left - state.pan.x) / state.zoom, y: (event.clientY - rect.top - state.pan.y) / state.zoom };
+  }
+
+  function textLines(lines, x, y, className) {
+    return lines.map((line, index) => `<text class="${className}" ${className === "title" ? "font-weight=\"700\"" : ""} x="${x}" y="${y + index * (className === "field" ? 17 : 16)}">${escapeHtml(line)}</text>`).join("");
+  }
+
+  function wrap(value, max) {
     const lines = [];
     let line = "";
-
-    words.forEach((word) => {
-      const parts = breakLongWord(word, maxChars);
-      parts.forEach((part) => {
-        const next = line ? line + " " + part : part;
-        if (next.length > maxChars && line) {
-          lines.push(line);
-          line = part;
-        } else {
-          line = next;
-        }
-      });
+    String(value || "").split(/\s+/).filter(Boolean).flatMap((word) => breakWord(word, max)).forEach((word) => {
+      const next = line ? line + " " + word : word;
+      if (next.length > max && line) {
+        lines.push(line);
+        line = word;
+      } else {
+        line = next;
+      }
     });
     if (line) lines.push(line);
     return lines.length ? lines : [""];
   }
 
-  function breakLongWord(word, maxChars) {
-    if (word.length <= maxChars) return [word];
-    const chunks = [];
-    for (let index = 0; index < word.length; index += maxChars - 1) {
-      const part = word.slice(index, index + maxChars - 1);
-      chunks.push(index + maxChars - 1 < word.length ? part + "-" : part);
-    }
-    return chunks;
+  function breakWord(word, max) {
+    if (word.length <= max) return [word];
+    const parts = [];
+    for (let i = 0; i < word.length; i += max - 1) parts.push(word.slice(i, i + max - 1) + (i + max - 1 < word.length ? "-" : ""));
+    return parts;
   }
 
-  function svgPoint(event) {
-    const rect = el.graphSvg.getBoundingClientRect();
-    return {
-      x: (event.clientX - rect.left - state.pan.x) / state.zoom,
-      y: (event.clientY - rect.top - state.pan.y) / state.zoom
-    };
+  function rootWeight(name) {
+    return { Query: 0, Mutation: 1, Subscription: 2 }[name] ?? 10;
   }
 
-  function bindPanZoom() {
-    let draggingCanvas = false;
-    let draggingNode = null;
-    let last = { x: 0, y: 0 };
-    el.graphSvg.addEventListener("mousedown", (event) => {
-      const nodeEl = event.target.closest("[data-node]");
-      if (nodeEl) {
-        const point = svgPoint(event);
-        const current = state.nodePositions[nodeEl.dataset.node] || {
-          x: Number(nodeEl.dataset.x) || 0,
-          y: Number(nodeEl.dataset.y) || 0
-        };
-        draggingNode = {
-          id: nodeEl.dataset.node,
-          offsetX: point.x - current.x,
-          offsetY: point.y - current.y
-        };
-        event.stopPropagation();
-        return;
-      }
-      draggingCanvas = true;
-      last = { x: event.clientX, y: event.clientY };
-    });
-    window.addEventListener("mousemove", (event) => {
-      if (draggingNode) {
-        const point = svgPoint(event);
-        state.nodePositions[draggingNode.id] = {
-          x: point.x - draggingNode.offsetX,
-          y: point.y - draggingNode.offsetY
-        };
-        scheduleRender();
-        return;
-      }
-      if (!draggingCanvas) return;
-      state.pan.x += event.clientX - last.x;
-      state.pan.y += event.clientY - last.y;
-      last = { x: event.clientX, y: event.clientY };
-      scheduleRender();
-    });
-    window.addEventListener("mouseup", () => {
-      draggingCanvas = false;
-      draggingNode = null;
-    });
-    el.graphSvg.addEventListener("wheel", (event) => {
-      event.preventDefault();
-      const factor = event.deltaY > 0 ? 0.9 : 1.1;
-      state.zoom = Math.min(2.4, Math.max(0.35, state.zoom * factor));
-      scheduleRender();
-    }, { passive: false });
+  function kindWeight(kind) {
+    return { OBJECT: 0, INTERFACE: 1, INPUT_OBJECT: 2, INPUT: 2, UNION: 3, ENUM: 4, SCALAR: 5 }[kind] ?? 6;
   }
 
   function readableKind(kind) {
-    const map = {
-      OBJECT: "object",
-      INTERFACE: "interface",
-      INPUT_OBJECT: "input",
-      INPUT: "input",
-      ENUM: "enum",
-      UNION: "union",
-      SCALAR: "scalar"
-    };
-    return map[kind] || String(kind).toLowerCase();
+    return { OBJECT: "object", INTERFACE: "interface", INPUT_OBJECT: "input", INPUT: "input", ENUM: "enum", UNION: "union", SCALAR: "scalar" }[kind] || String(kind).toLowerCase();
   }
 
   function shortType(type) {
@@ -751,39 +640,26 @@ enum Role {
   }
 
   function toDot(graph) {
-    const lines = ["digraph GraphQLSchema {", "  graph [rankdir=LR];", "  node [shape=record, style=rounded];"];
-    graph.nodes.forEach((node) => {
-      lines.push(`  "${escapeDot(node.id)}" [label="{${escapeDot(node.name)}|${escapeDot(readableKind(node.kind))}}"];
-`);
-    });
-    graph.edges.forEach((edge) => {
-      lines.push(`  "${escapeDot(edge.source)}" -> "${escapeDot(edge.target)}" [label="${escapeDot(edge.label)}"];
-`);
-    });
-    lines.push("}");
-    return lines.join("\n");
-  }
-
-  function exportSvg() {
-    const content = `<?xml version="1.0" encoding="UTF-8"?>\n${el.graphSvg.outerHTML}`;
-    downloadText("schema.svg", content);
+    return ["digraph GraphQLSchema {", "  graph [rankdir=LR];", "  node [shape=record, style=rounded];"]
+      .concat(graph.nodes.map((node) => `  "${escapeDot(node.id)}" [label="{${escapeDot(node.name)}|${escapeDot(readableKind(node.kind))}}"];`))
+      .concat(graph.edges.map((item) => `  "${escapeDot(item.source)}" -> "${escapeDot(item.target)}" [label="${escapeDot(item.label)}"];`))
+      .concat("}")
+      .join("\n");
   }
 
   function exportPng() {
-    const serialized = new XMLSerializer().serializeToString(el.graphSvg);
     const image = new Image();
-    const blob = new Blob([serialized], { type: "image/svg+xml;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
+    const url = URL.createObjectURL(new Blob([new XMLSerializer().serializeToString(el.svg)], { type: "image/svg+xml;charset=utf-8" }));
     image.onload = () => {
       const canvas = document.createElement("canvas");
-      canvas.width = Math.max(1200, el.graphSvg.clientWidth * 2);
-      canvas.height = Math.max(800, el.graphSvg.clientHeight * 2);
-      const context = canvas.getContext("2d");
-      context.fillStyle = "#ffffff";
-      context.fillRect(0, 0, canvas.width, canvas.height);
-      context.drawImage(image, 0, 0, canvas.width, canvas.height);
+      canvas.width = Math.max(1200, el.svg.clientWidth * 2);
+      canvas.height = Math.max(800, el.svg.clientHeight * 2);
+      const ctx = canvas.getContext("2d");
+      ctx.fillStyle = "#fff";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
       URL.revokeObjectURL(url);
-      canvas.toBlob((png) => downloadBlob("schema.png", png), "image/png");
+      canvas.toBlob((blob) => downloadBlob("schema.png", blob), "image/png");
     };
     image.src = url;
   }
@@ -805,13 +681,7 @@ enum Role {
   }
 
   function escapeHtml(value) {
-    return String(value).replace(/[&<>"']/g, (char) => ({
-      "&": "&amp;",
-      "<": "&lt;",
-      ">": "&gt;",
-      '"': "&quot;",
-      "'": "&#039;"
-    }[char]));
+    return String(value).replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" }[char]));
   }
 
   function escapeAttr(value) {
