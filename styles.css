@@ -91,6 +91,7 @@ h2 {
 .toolbar,
 .exports,
 .segmented,
+.tools,
 .file-row {
   display: flex;
   align-items: center;
@@ -211,6 +212,10 @@ textarea:focus {
 .search-wrap {
   min-width: 180px;
   width: min(340px, 34vw);
+}
+
+.tools button {
+  white-space: nowrap;
 }
 
 .stats {
@@ -388,10 +393,11 @@ textarea:focus {
 @media (max-width: 640px) {
   .actions,
   .exports,
+  .tools,
   .segmented {
     width: 100%;
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
   }
 
   .topbar,
