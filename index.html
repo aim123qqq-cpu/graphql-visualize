@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GraphQL Визуализатор</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">Платформа анализа схем</p>
+        <h1>GraphQL Визуализатор</h1>
+      </div>
+      <div class="actions">
+        <button id="buildBtn" class="primary">Построить граф</button>
+        <button id="sampleBtn">Пример схемы</button>
+        <button id="clearBtn" title="Очистить">Сброс</button>
+      </div>
+    </header>
+
+    <main class="workspace">
+      <aside class="panel input-panel">
+        <div class="tabs" role="tablist" aria-label="Источник схемы">
+          <button class="tab active" data-tab="schema">Схема</button>
+          <button class="tab" data-tab="endpoint">Endpoint</button>
+          <button class="tab" data-tab="theme">Тема</button>
+        </div>
+
+        <section class="tab-page active" id="schemaPage">
+          <label for="schemaInput">SDL или introspection JSON</label>
+          <textarea id="schemaInput" spellcheck="false" placeholder="Вставьте type Query { users: [User!]! } ..."></textarea>
+          <div class="file-row">
+            <input id="fileInput" type="file" accept=".graphql,.gql,.json,.txt,application/json">
+            <span id="fileName">Файл не выбран</span>
+          </div>
+        </section>
+
+        <section class="tab-page" id="endpointPage">
+          <label for="endpointInput">URL GraphQL сервера</label>
+          <input id="endpointInput" type="url" placeholder="https://example.com/graphql">
+          <label for="authInput">Authorization header</label>
+          <input id="authInput" type="text" placeholder="Bearer token">
+          <p class="hint">Запрос introspection выполняется из браузера. Если сервер закрыт CORS, вставьте JSON вручную.</p>
+          <button id="loadEndpointBtn">Загрузить introspection</button>
+        </section>
+
+        <section class="tab-page" id="themePage">
+          <label for="accentInput">Акцент</label>
+          <input id="accentInput" type="color" value="#2f6fed">
+          <label for="densityInput">Плотность графа</label>
+          <input id="densityInput" type="range" min="70" max="150" value="100">
+          <label class="switch">
+            <input id="showScalars" type="checkbox" checked>
+            <span>Показывать scalar и enum</span>
+          </label>
+          <label class="switch">
+            <input id="showBuiltins" type="checkbox">
+            <span>Показывать встроенные типы</span>
+          </label>
+        </section>
+      </aside>
+
+      <section class="graph-panel">
+        <div class="toolbar">
+          <div class="search-wrap">
+            <input id="searchInput" type="search" placeholder="Найти тип или поле">
+          </div>
+          <div class="segmented" aria-label="Режим отображения">
+            <button class="mode active" data-mode="types">Типы</button>
+            <button class="mode" data-mode="fields">Поля</button>
+            <button class="mode" data-mode="all">Все</button>
+          </div>
+          <div class="exports">
+            <button id="exportDotBtn">DOT</button>
+            <button id="exportSvgBtn">SVG</button>
+            <button id="exportPngBtn">PNG</button>
+          </div>
+        </div>
+
+        <div class="stats" id="stats">
+          <div><strong>0</strong><span>типов</span></div>
+          <div><strong>0</strong><span>связей</span></div>
+          <div><strong>0</strong><span>полей</span></div>
+        </div>
+
+        <div class="canvas-wrap" id="canvasWrap">
+          <svg id="graphSvg" role="img" aria-label="Граф GraphQL схемы"></svg>
+          <div class="empty-state" id="emptyState">
+            <h2>Схема пока не построена</h2>
+            <p>Вставьте GraphQL SDL, JSON introspection или загрузите пример.</p>
+          </div>
+        </div>
+      </section>
+
+      <aside class="panel details-panel">
+        <h2>Детали</h2>
+        <div id="details">
+          <p class="muted">Выберите узел или связь на графе.</p>
+        </div>
+        <h2>Проверка</h2>
+        <ul id="warnings" class="warnings">
+          <li>Нет данных для анализа.</li>
+        </ul>
+      </aside>
+    </main>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
