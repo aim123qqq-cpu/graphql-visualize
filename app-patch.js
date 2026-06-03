@@ -9,6 +9,26 @@
   let selectedNodeId = "";
   let selectedEdgeId = "";
   let enhancing = false;
+  let pendingEnhance = false;
+  let observer = null;
+  let observedSvg = null;
+  const observerOptions = { childList: true, subtree: true };
+
+  function observeSvg(svg) {
+    if (!observer || !svg) return;
+    observer.disconnect();
+    observedSvg = svg;
+    observer.observe(svg, observerOptions);
+  }
+
+  function scheduleEnhance() {
+    if (pendingEnhance) return;
+    pendingEnhance = true;
+    queueMicrotask(() => {
+      pendingEnhance = false;
+      enhance();
+    });
+  }
 
   function ensurePanelIcons() {
     const left = $("#leftPanelBtn");
@@ -394,34 +414,36 @@
   function enhance() {
     if (enhancing) return;
     enhancing = true;
-    ensurePanelIcons();
-    splitFieldRows();
-    const svg = $("#graphSvg");
-    if (!svg) {
+    if (observer) observer.disconnect();
+    try {
+      ensurePanelIcons();
+      splitFieldRows();
+      const svg = $("#graphSvg");
+      if (!svg) return;
+      const nodes = [...svg.querySelectorAll("[data-node]")].map(nodeInfo);
+      const edges = parseEdges(svg);
+      const signature = nodes.map((node) => node.id).sort().join("|") + "::" + edges.length;
+      if (signature !== lastSignature) {
+        userViewportChanged = false;
+        userMovedNode = false;
+        lastSignature = signature;
+      }
+      spiderLayout(nodes, edges);
+      applyNodeSkin(nodes);
+      updateFieldRows(nodes);
+      updateEdges(nodes, edges);
+      applySelection();
+      fitGraph(svg, nodes);
+      observeSvg(svg);
+    } finally {
       enhancing = false;
-      return;
     }
-    const nodes = [...svg.querySelectorAll("[data-node]")].map(nodeInfo);
-    const edges = parseEdges(svg);
-    const signature = nodes.map((node) => node.id).sort().join("|") + "::" + edges.length;
-    if (signature !== lastSignature) {
-      userViewportChanged = false;
-      userMovedNode = false;
-      lastSignature = signature;
-    }
-    spiderLayout(nodes, edges);
-    applyNodeSkin(nodes);
-    updateFieldRows(nodes);
-    updateEdges(nodes, edges);
-    applySelection();
-    fitGraph(svg, nodes);
-    enhancing = false;
   }
 
-  const observer = new MutationObserver(() => enhance());
+  observer = new MutationObserver(() => scheduleEnhance());
   window.addEventListener("load", () => {
     const svg = $("#graphSvg");
-    if (svg) observer.observe(svg, { childList: true, subtree: true });
+    if (svg) observeSvg(svg);
     enhance();
   });
   document.addEventListener("mousedown", (event) => {
@@ -454,6 +476,6 @@
       selectedNodeId = "";
       selectedEdgeId = "";
     }
-    enhance();
+    scheduleEnhance();
   }, true);
 })();
