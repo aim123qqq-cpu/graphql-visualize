@@ -66,12 +66,20 @@ enum Role { STUDENT TEACHER ADMIN }`;
     positions: {},
     selected: null,
     search: "",
+    ui: {
+      leftCollapsed: false,
+      rightCollapsed: false,
+      theme: "light"
+    },
     frame: 0
   };
 
   const $ = (id) => document.getElementById(id);
   const el = {
     schema: $("schemaInput"),
+    leftPanel: $("leftPanelBtn"),
+    rightPanel: $("rightPanelBtn"),
+    themeToggle: $("themeToggleBtn"),
     build: $("buildBtn"),
     sample: $("sampleBtn"),
     clear: $("clearBtn"),
@@ -97,6 +105,7 @@ enum Role { STUDENT TEACHER ADMIN }`;
   };
 
   function init() {
+    restoreUi();
     el.schema.value = sampleSchema;
     bindEvents();
     buildGraph();
@@ -125,6 +134,9 @@ enum Role { STUDENT TEACHER ADMIN }`;
       state.selected = null;
       render();
     };
+    el.leftPanel.onclick = () => togglePanel("left");
+    el.rightPanel.onclick = () => togglePanel("right");
+    el.themeToggle.onclick = toggleTheme;
     el.optimize.onclick = optimizeGraph;
     el.file.onchange = loadFile;
     el.loadEndpoint.onclick = loadEndpoint;
@@ -143,6 +155,45 @@ enum Role { STUDENT TEACHER ADMIN }`;
     el.svgExport.onclick = () => downloadText("schema.svg", `<?xml version="1.0" encoding="UTF-8"?>\n${el.svg.outerHTML}`);
     el.png.onclick = exportPng;
     bindDrag();
+  }
+
+  function restoreUi() {
+    try {
+      const saved = JSON.parse(localStorage.getItem("graphqlVisualizerUi") || "{}");
+      state.ui.leftCollapsed = Boolean(saved.leftCollapsed);
+      state.ui.rightCollapsed = Boolean(saved.rightCollapsed);
+      state.ui.theme = saved.theme === "dark" ? "dark" : "light";
+    } catch (error) {
+      state.ui = { leftCollapsed: false, rightCollapsed: false, theme: "light" };
+    }
+    applyUi();
+  }
+
+  function saveUi() {
+    localStorage.setItem("graphqlVisualizerUi", JSON.stringify(state.ui));
+  }
+
+  function applyUi() {
+    document.body.classList.toggle("left-collapsed", state.ui.leftCollapsed);
+    document.body.classList.toggle("right-collapsed", state.ui.rightCollapsed);
+    document.body.classList.toggle("theme-dark", state.ui.theme === "dark");
+    if (el.leftPanel) el.leftPanel.textContent = state.ui.leftCollapsed ? "→" : "←";
+    if (el.rightPanel) el.rightPanel.textContent = state.ui.rightCollapsed ? "←" : "→";
+    if (el.themeToggle) el.themeToggle.textContent = state.ui.theme === "dark" ? "☀" : "◐";
+    requestAnimationFrame(() => render());
+  }
+
+  function togglePanel(side) {
+    if (side === "left") state.ui.leftCollapsed = !state.ui.leftCollapsed;
+    if (side === "right") state.ui.rightCollapsed = !state.ui.rightCollapsed;
+    applyUi();
+    saveUi();
+  }
+
+  function toggleTheme() {
+    state.ui.theme = state.ui.theme === "dark" ? "light" : "dark";
+    applyUi();
+    saveUi();
   }
 
   function activateTab(name) {
@@ -374,7 +425,7 @@ enum Role { STUDENT TEACHER ADMIN }`;
         if (!levels.has(id) || nextLevel < levels.get(id)) {
           levels.set(id, nextLevel);
           const target = nodes.find((item) => item.id === id);
-          if (target && !queue.includes(target)) queue.push(target);
+          if (target && !queue.includes(target)) queue.pushhtarget);
         }
       });
     }

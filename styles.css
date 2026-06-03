@@ -8,6 +8,35 @@
   --soft: #edf1f6;
   --danger: #b42318;
   --shadow: 0 10px 30px rgba(23, 32, 51, 0.08);
+  --button-bg: #ffffff;
+  --field-bg: #ffffff;
+  --edge: #8a94a6;
+  --edge-label-stroke: #ffffff;
+  --left-column: minmax(280px, 350px);
+  --right-column: minmax(260px, 320px);
+}
+
+body.theme-dark {
+  --bg: #0f1623;
+  --panel: #151e2d;
+  --ink: #e7edf7;
+  --muted: #9aa8ba;
+  --line: #293548;
+  --soft: #1c2838;
+  --danger: #ff8a80;
+  --shadow: 0 14px 34px rgba(0, 0, 0, 0.28);
+  --button-bg: #111827;
+  --field-bg: #0f1724;
+  --edge: #75869d;
+  --edge-label-stroke: #151e2d;
+}
+
+body.left-collapsed {
+  --left-column: 0;
+}
+
+body.right-collapsed {
+  --right-column: 0;
 }
 
 * {
@@ -31,11 +60,27 @@ textarea {
 button {
   border: 1px solid var(--line);
   border-radius: 6px;
-  background: #fff;
+  background: var(--button-bg);
   color: var(--ink);
   min-height: 36px;
   padding: 0 12px;
   cursor: pointer;
+}
+
+.icon-btn {
+  width: 36px;
+  min-width: 36px;
+  padding: 0;
+  font-size: 17px;
+  font-weight: 700;
+}
+
+body.left-collapsed #leftPanelBtn,
+body.right-collapsed #rightPanelBtn,
+body.theme-dark #themeToggleBtn {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
 }
 
 button:hover {
@@ -63,7 +108,7 @@ button.primary,
   gap: 24px;
   padding: 18px 24px;
   border-bottom: 1px solid var(--line);
-  background: #fff;
+  background: var(--panel);
 }
 
 .eyebrow {
@@ -100,10 +145,11 @@ h2 {
 
 .workspace {
   display: grid;
-  grid-template-columns: minmax(280px, 350px) minmax(420px, 1fr) minmax(260px, 320px);
+  grid-template-columns: var(--left-column) minmax(420px, 1fr) var(--right-column);
   gap: 16px;
   padding: 16px;
   min-height: 0;
+  transition: grid-template-columns 180ms ease;
 }
 
 .panel,
@@ -119,6 +165,16 @@ h2 {
 .details-panel {
   padding: 14px;
   overflow: auto;
+  transition: opacity 160ms ease, padding 160ms ease, border-width 160ms ease;
+}
+
+body.left-collapsed .input-panel,
+body.right-collapsed .details-panel {
+  border-width: 0;
+  opacity: 0;
+  overflow: hidden;
+  padding: 0;
+  pointer-events: none;
 }
 
 .tabs {
@@ -155,7 +211,7 @@ input[type="search"] {
   width: 100%;
   border: 1px solid var(--line);
   border-radius: 6px;
-  background: #fff;
+  background: var(--field-bg);
   color: var(--ink);
   outline: none;
 }
@@ -253,6 +309,13 @@ textarea:focus {
   background-size: 28px 28px;
 }
 
+body.theme-dark .canvas-wrap {
+  background:
+    linear-gradient(var(--soft) 1px, transparent 1px),
+    linear-gradient(90deg, var(--soft) 1px, transparent 1px);
+  background-color: #101827;
+}
+
 #graphSvg {
   width: 100%;
   height: 100%;
@@ -285,7 +348,7 @@ textarea:focus {
 }
 
 .node rect {
-  fill: #fff;
+  fill: var(--panel);
   stroke: var(--line);
   stroke-width: 1.5;
 }
@@ -314,13 +377,21 @@ textarea:focus {
   fill: #243149;
 }
 
+body.theme-dark .node .field {
+  fill: #b8c5d8;
+}
+
+body.theme-dark .node .title {
+  fill: #f2f6fb;
+}
+
 .node .kind {
   fill: var(--muted);
   font-size: 11px;
 }
 
 .edge {
-  stroke: #8a94a6;
+  stroke: var(--edge);
   stroke-width: 1.4;
   fill: none;
   marker-end: url(#arrow);
@@ -336,7 +407,7 @@ textarea:focus {
   fill: var(--muted);
   font-size: 11px;
   paint-order: stroke;
-  stroke: #fff;
+  stroke: var(--edge-label-stroke);
   stroke-width: 4px;
 }
 
@@ -350,7 +421,7 @@ textarea:focus {
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 12px;
-  background: #fff;
+  background: var(--field-bg);
 }
 
 .detail-card h3 {
