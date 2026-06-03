@@ -36,6 +36,47 @@
     return `<div class="detail-card"><h3>${escapeHtml(source)} -> ${escapeHtml(target)}</h3><p class="muted">Связь через поле: ${escapeHtml(label)}</p></div>`;
   }
 
+  function selectNode(node) {
+    clearSelection();
+    node.classList.add("selected");
+    const details = $("#details");
+    if (details) details.innerHTML = nodeDetails(node);
+  }
+
+  function selectEdge(edge) {
+    clearSelection();
+    edge.querySelector(".edge")?.classList.add("selected");
+    const details = $("#details");
+    if (details) details.innerHTML = edgeDetails(edge);
+  }
+
+  function selectCanvas() {
+    clearSelection();
+    const details = $("#details");
+    if (details) details.innerHTML = '<p class="muted">Выберите узел или связь на графе.</p>';
+  }
+
+  function bindSvgSelection() {
+    const svg = $("#graphSvg");
+    if (!svg) return;
+
+    svg.querySelectorAll("[data-node]").forEach((node) => {
+      node.onclick = (event) => {
+        event.stopPropagation();
+        selectNode(node);
+      };
+    });
+
+    svg.querySelectorAll("[data-edge]").forEach((edge) => {
+      edge.onclick = (event) => {
+        event.stopPropagation();
+        selectEdge(edge);
+      };
+    });
+
+    svg.onclick = () => selectCanvas();
+  }
+
   document.addEventListener("click", (event) => {
     if (!event.target.closest("#graphSvg")) return;
     event.preventDefault();
@@ -43,21 +84,15 @@
 
     const node = event.target.closest("[data-node]");
     const edge = event.target.closest("[data-edge]");
-    const details = $("#details");
-    clearSelection();
-
-    if (node) {
-      node.classList.add("selected");
-      if (details) details.innerHTML = nodeDetails(node);
-      return;
-    }
-
-    if (edge) {
-      edge.querySelector(".edge")?.classList.add("selected");
-      if (details) details.innerHTML = edgeDetails(edge);
-      return;
-    }
-
-    if (details) details.innerHTML = '<p class="muted">Выберите узел или связь на графе.</p>';
+    if (node) return selectNode(node);
+    if (edge) return selectEdge(edge);
+    selectCanvas();
   }, true);
+
+  window.addEventListener("load", () => {
+    const svg = $("#graphSvg");
+    if (!svg) return;
+    bindSvgSelection();
+    new MutationObserver(() => requestAnimationFrame(bindSvgSelection)).observe(svg, { childList: true, subtree: true });
+  });
 })();
