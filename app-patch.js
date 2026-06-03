@@ -2,7 +2,9 @@
   "use strict";
 
   const $ = (selector) => document.querySelector(selector);
-  let userMovedNode = false;
+  let userInteracting = false;
+  let lastSignature = "";
+  let pointerStart = null;
 
   function ensurePanelIcons() {
     const left = $("#leftPanelBtn");
@@ -56,6 +58,59 @@
     });
   }
 
+  function applyNodeSkin(nodes) {
+    nodes.forEach((node) => {
+      const rect = node.el.querySelector("rect");
+      if (!rect) return;
+      rect.setAttribute("rx", "10");
+      let header = node.el.querySelector(".node-header");
+      if (!header) {
+        header = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+        header.setAttribute("class", "node-header");
+        header.setAttribute("x", "0");
+        header.setAttribute("y", "0");
+        header.setAttribute("rx", "10");
+        node.el.insertBefore(header, rect.nextSibling);
+      }
+      header.setAttribute("width", String(node.width));
+      header.setAttribute("height", "34");
+      const title = node.el.querySelector("text.title");
+      if (title) {
+        title.setAttribute("x", "14");
+        title.setAttribute("y", "21");
+      }
+      const kind = node.el.querySelector("text.kind");
+      const kindText = kind ? kind.textContent || "type" : "type";
+      if (kind) kind.style.display = "none";
+      let badge = node.el.querySelector(".node-kind-badge");
+      if (!badge) {
+        badge = document.createElementNS("http://www.w3.org/2000/svg", "g");
+        badge.setAttribute("class", "node-kind-badge");
+        const pill = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+        pill.setAttribute("class", "node-kind-pill");
+        pill.setAttribute("rx", "11");
+        pill.setAttribute("height", "22");
+        const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        text.setAttribute("class", "node-kind-text");
+        text.setAttribute("text-anchor", "middle");
+        badge.appendChild(pill);
+        badge.appendChild(text);
+        node.el.appendChild(badge);
+      }
+      const label = node.id === "Query" ? "root" : kindText;
+      const pillWidth = Math.max(42, label.length * 7 + 18);
+      const pill = badge.querySelector(".node-kind-pill");
+      const text = badge.querySelector(".node-kind-text");
+      pill.setAttribute("x", String(node.width - pillWidth - 10));
+      pill.setAttribute("y", "7");
+      pill.setAttribute("width", String(pillWidth));
+      text.setAttribute("x", String(node.width - pillWidth / 2 - 10));
+      text.setAttribute("y", "22");
+      text.textContent = label;
+      node.el.classList.toggle("root-node", node.id === "Query");
+    });
+  }
+
   function nodeInfo(nodeEl) {
     const rect = nodeEl.querySelector("rect");
     return {
@@ -92,7 +147,7 @@
   }
 
   function spiderLayout(nodes, edges) {
-    if (!nodes.length || userMovedNode) return;
+    if (!nodes.length || userInteracting) return;
     const center = chooseCenter(nodes, edges);
     if (!center) return;
     const neighbors = new Map(nodes.map((node) => [node.id, new Set()]));
@@ -223,7 +278,7 @@
   }
 
   function fitGraph(svg, nodes) {
-    if (!nodes.length || userMovedNode) return;
+    if (!nodes.length || userInteracting) return;
     const group = svg.querySelector("g[transform]");
     if (!group) return;
     const minX = Math.min(...nodes.map((node) => node.x));
@@ -248,7 +303,13 @@
     if (!svg) return;
     const nodes = [...svg.querySelectorAll("[data-node]")].map(nodeInfo);
     const edges = parseEdges(svg);
+    const signature = nodes.map((node) => node.id).sort().join("|") + "::" + edges.length;
+    if (signature !== lastSignature) {
+      userInteracting = false;
+      lastSignature = signature;
+    }
     spiderLayout(nodes, edges);
+    applyNodeSkin(nodes);
     updateFieldRows(nodes);
     updateEdges(nodes, edges);
     fitGraph(svg, nodes);
@@ -261,10 +322,23 @@
     enhance();
   });
   document.addEventListener("mousedown", (event) => {
-    if (event.target.closest("[data-node]")) userMovedNode = true;
+    if (event.target.closest("#graphSvg")) pointerStart = { x: event.clientX, y: event.clientY };
+  }, true);
+  document.addEventListener("mousemove", (event) => {
+    if (!pointerStart) return;
+    if (Math.hypot(event.clientX - pointerStart.x, event.clientY - pointerStart.y) > 4) {
+      userInteracting = true;
+    }
+  }, true);
+  document.addEventListener("mouseup", () => {
+    pointerStart = null;
+  }, true);
+  document.addEventListener("wheel", (event) => {
+    if (event.target.closest("#graphSvg")) userInteracting = true;
   }, true);
   document.addEventListener("click", (event) => {
-    if (event.target.closest("#buildBtn, #sampleBtn, #optimizeBtn, .mode, #densityInput")) userMovedNode = false;
+    if (event.target.closest("#buildBtn, #sampleBtn, #optimizeBtn, .mode, #densityInput")) userInteracting = false;
     requestAnimationFrame(enhance);
+    setTimeout(() => requestAnimationFrame(enhance), 0);
   }, true);
 })();

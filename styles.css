@@ -106,7 +106,7 @@ button.primary,
   align-items: center;
   justify-content: space-between;
   gap: 24px;
-  padding: 18px 24px;
+  padding: 18px 24ppx;
   border-bottom: 1px solid var(--line);
   background: var(--panel);
 }
@@ -159,14 +159,6 @@ h2 {
   border: 1px solid var(--line);
   border-radius: 8px;
   box-shadow: var(--shadow);
-}
-
-.input-panel,
-details-panel {
-  position: relative;
-  padding: 14px;
-  overflow: visible;
-  transition: padding 160ms ease, border-width 160ms ease, box-shadow 160ms ease, background 160ms ease;
 }
 
 .input-panel,
@@ -248,6 +240,7 @@ body.right-collapsed .right-toggle {
     linear-gradient(currentColor, currentColor) 7px 9px / 9px 2px no-repeat,
     linear-gradient(currentColor, currentColor) 7px 14px / 9px 2px no-repeat;
 }
+
 
 .sidebar-icon.mirrored {
   transform: scaleX(-1);
@@ -434,6 +427,18 @@ body.theme-dark .canvas-wrap {
   stroke-width: 1.5;
 }
 
+.node .node-header {
+  fill: color-mix(in srgb, var(--panel), #f1f5f9 45%);
+  stroke: var(--line);
+  stroke-width: 1;
+  pointer-events: none;
+}
+
+.node.root-node .node-header {
+  fill: #29284f;
+  stroke: #29284f;
+}
+
 .node {
   cursor: move;
 }
@@ -454,23 +459,49 @@ body.theme-dark .canvas-wrap {
   font-size: 13px;
 }
 
+.node.root-node .title {
+  fill: #ffffff;
+}
+
 .node .field {
-  fill: #243149;
+  fill: #667085;
 }
 
 .node .field-type {
-  fill: var(--accent);
+  fill: #6f92ff;
   font-family: Consolas, "Courier New", monospace;
   font-size: 11px;
+  font-weight: 700;
 }
 
 .node .field-name {
   font-weight: 500;
 }
 
-.node .field-row line {
-  stroke: var(--soft);
+.node .field-row line,
+.node .field-row-line {
+  display: none;
+}
+
+.node .node-kind-pill {
+  fill: color-mix(in srgb, var(--panel), #eef2f8 70%);
+  stroke: var(--line);
   stroke-width: 1;
+}
+
+.node.root-node .node-kind-pill {
+  fill: rgba(255, 255, 255, 0.12);
+  stroke: rgba(255, 255, 255, 0.08);
+}
+
+.node .node-kind-text {
+  fill: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.node.root-node .node-kind-text {
+  fill: #ffffff;
 }
 
 body.theme-dark .node .field {
@@ -479,6 +510,16 @@ body.theme-dark .node .field {
 
 body.theme-dark .node .field-type {
   fill: #8fb4ff;
+}
+
+body.theme-dark .node .node-header {
+  fill: #192235;
+  stroke: #293548;
+}
+
+body.theme-dark .node .node-kind-pill {
+  fill: #101827;
+  stroke: #293548;
 }
 
 body.theme-dark .node .title {
