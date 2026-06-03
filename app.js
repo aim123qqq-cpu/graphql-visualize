@@ -425,7 +425,7 @@ enum Role { STUDENT TEACHER ADMIN }`;
         if (!levels.has(id) || nextLevel < levels.get(id)) {
           levels.set(id, nextLevel);
           const target = nodes.find((item) => item.id === id);
-          if (target && !queue.includes(target)) queue.pushhtarget);
+          if (target && !queue.includes(target)) queue.push(target);
         }
       });
     }
