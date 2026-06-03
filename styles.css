@@ -163,18 +163,91 @@ h2 {
 
 .input-panel,
 .details-panel {
+  position: relative;
   padding: 14px;
+  overflow: visible;
+  transition: padding 160ms ease, border-width 160ms ease, box-shadow 160ms ease, background 160ms ease;
+}
+
+.panel-content {
+  height: 100%;
   overflow: auto;
-  transition: opacity 160ms ease, padding 160ms ease, border-width 160ms ease;
+  transition: opacity 160ms ease, visibility 160ms ease;
 }
 
 body.left-collapsed .input-panel,
 body.right-collapsed .details-panel {
+  background: transparent;
   border-width: 0;
-  opacity: 0;
-  overflow: hidden;
+  box-shadow: none;
   padding: 0;
+}
+
+body.left-collapsed .input-panel .panel-content,
+body.right-collapsed .details-panel .panel-content {
+  opacity: 0;
   pointer-events: none;
+  visibility: hidden;
+}
+
+.panel-toggle {
+  position: absolute;
+  top: 18px;
+  z-index: 20;
+  width: 30px;
+  min-width: 30px;
+  height: 34px;
+  min-height: 34px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  box-shadow: 0 8px 18px rgba(23, 32, 51, 0.12);
+}
+
+.left-toggle {
+  right: -15px;
+}
+
+.right-toggle {
+  left: -15px;
+}
+
+body.left-collapsed .left-toggle,
+body.right-collapsed .right-toggle {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+body.left-collapsed .left-toggle {
+  right: -32px;
+}
+
+body.right-collapsed .right-toggle {
+  left: -32px;
+}
+
+.sidebar-icon {
+  width: 18px;
+  height: 18px;
+  display: block;
+  color: var(--ink);
+  background:
+    linear-gradient(currentColor, currentColor) 3px 3px / 2px 14px no-repeat,
+    linear-gradient(currentColor, currentColor) 7px 4px / 9px 2px no-repeat,
+    linear-gradient(currentColor, currentColor) 7px 9px / 9px 2px no-repeat,
+    linear-gradient(currentColor, currentColor) 7px 14px / 9px 2px no-repeat;
+}
+
+.sidebar-icon.mirrored {
+  transform: scaleX(-1);
+}
+
+body.left-collapsed .left-toggle .sidebar-icon,
+body.right-collapsed .right-toggle .sidebar-icon {
+  color: #fff;
 }
 
 .tabs {
@@ -375,6 +448,12 @@ body.theme-dark .canvas-wrap {
 
 .node .field {
   fill: #243149;
+}
+
+.node .field-row line,
+.node .field-row-line {
+  stroke: var(--soft);
+  stroke-width: 1;
 }
 
 body.theme-dark .node .field {

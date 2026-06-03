@@ -14,8 +14,6 @@
         <h1>GraphQL Визуализатор</h1>
       </div>
       <div class="actions">
-        <button id="leftPanelBtn" class="icon-btn" type="button" title="Скрыть или показать левую панель" aria-label="Скрыть или показать левую панель">←</button>
-        <button id="rightPanelBtn" class="icon-btn" type="button" title="Скрыть или показать правую панель" aria-label="Скрыть или показать правую панель">→</button>
         <button id="themeToggleBtn" class="icon-btn" type="button" title="Переключить светлую и тёмную тему" aria-label="Переключить светлую и тёмную тему">◐</button>
         <button id="buildBtn" class="primary">Построить граф</button>
         <button id="sampleBtn">Пример схемы</button>
@@ -25,44 +23,49 @@
 
     <main class="workspace">
       <aside class="panel input-panel">
-        <div class="tabs" role="tablist" aria-label="Источник схемы">
-          <button class="tab active" data-tab="schema">Схема</button>
-          <button class="tab" data-tab="endpoint">Endpoint</button>
-          <button class="tab" data-tab="theme">Тема</button>
-        </div>
-
-        <section class="tab-page active" id="schemaPage">
-          <label for="schemaInput">SDL или introspection JSON</label>
-          <textarea id="schemaInput" spellcheck="false" placeholder="Вставьте type Query { users: [User!]! } ..."></textarea>
-          <div class="file-row">
-            <input id="fileInput" type="file" accept=".graphql,.gql,.json,.txt,application/json">
-            <span id="fileName">Файл не выбран</span>
+        <button id="leftPanelBtn" class="panel-toggle left-toggle" type="button" title="Скрыть или показать левую панель" aria-label="Скрыть или показать левую панель">
+          <span class="sidebar-icon" aria-hidden="true"></span>
+        </button>
+        <div class="panel-content">
+          <div class="tabs" role="tablist" aria-label="Источник схемы">
+            <button class="tab active" data-tab="schema">Схема</button>
+            <button class="tab" data-tab="endpoint">Endpoint</button>
+            <button class="tab" data-tab="theme">Тема</button>
           </div>
-        </section>
 
-        <section class="tab-page" id="endpointPage">
-          <label for="endpointInput">URL GraphQL сервера</label>
-          <input id="endpointInput" type="url" placeholder="https://example.com/graphql">
-          <label for="authInput">Authorization header</label>
-          <input id="authInput" type="text" placeholder="Bearer token">
-          <p class="hint">Запрос introspection выполняется из браузера. Если сервер закрыт CORS, вставьте JSON вручную.</p>
-          <button id="loadEndpointBtn">Загрузить introspection</button>
-        </section>
+          <section class="tab-page active" id="schemaPage">
+            <label for="schemaInput">SDL или introspection JSON</label>
+            <textarea id="schemaInput" spellcheck="false" placeholder="Вставьте type Query { users: [User!]! } ..."></textarea>
+            <div class="file-row">
+              <input id="fileInput" type="file" accept=".graphql,.gql,.json,.txt,application/json">
+              <span id="fileName">Файл не выбран</span>
+            </div>
+          </section>
 
-        <section class="tab-page" id="themePage">
-          <label for="accentInput">Акцент</label>
-          <input id="accentInput" type="color" value="#2f6fed">
-          <label for="densityInput">Плотность графа</label>
-          <input id="densityInput" type="range" min="70" max="150" value="100">
-          <label class="switch">
-            <input id="showScalars" type="checkbox" checked>
-            <span>Показывать scalar и enum</span>
-          </label>
-          <label class="switch">
-            <input id="showBuiltins" type="checkbox">
-            <span>Показывать встроенные типы</span>
-          </label>
-        </section>
+          <section class="tab-page" id="endpointPage">
+            <label for="endpointInput">URL GraphQL сервера</label>
+            <input id="endpointInput" type="url" placeholder="https://example.com/graphql">
+            <label for="authInput">Authorization header</label>
+            <input id="authInput" type="text" placeholder="Bearer token">
+            <p class="hint">Запрос introspection выполняется из браузера. Если сервер закрыт CORS, вставьте JSON вручную.</p>
+            <button id="loadEndpointBtn">Загрузить introspection</button>
+          </section>
+
+          <section class="tab-page" id="themePage">
+            <label for="accentInput">Акцент</label>
+            <input id="accentInput" type="color" value="#2f6fed">
+            <label for="densityInput">Плотность графа</label>
+            <input id="densityInput" type="range" min="70" max="150" value="100">
+            <label class="switch">
+              <input id="showScalars" type="checkbox" checked>
+              <span>Показывать scalar и enum</span>
+            </label>
+            <label class="switch">
+              <input id="showBuiltins" type="checkbox">
+              <span>Показывать встроенные типы</span>
+            </label>
+          </section>
+        </div>
       </aside>
 
       <section class="graph-panel">
@@ -101,18 +104,24 @@
       </section>
 
       <aside class="panel details-panel">
-        <h2>Детали</h2>
-        <div id="details">
-          <p class="muted">Выберите узел или связь на графе.</p>
+        <button id="rightPanelBtn" class="panel-toggle right-toggle" type="button" title="Скрыть или показать правую панель" aria-label="Скрыть или показать правую панель">
+          <span class="sidebar-icon mirrored" aria-hidden="true"></span>
+        </button>
+        <div class="panel-content">
+          <h2>Детали</h2>
+          <div id="details">
+            <p class="muted">Выберите узел или связь на графе.</p>
+          </div>
+          <h2>Проверка</h2>
+          <ul id="warnings" class="warnings">
+            <li>Нет данных для анализа.</li>
+          </ul>
         </div>
-        <h2>Проверка</h2>
-        <ul id="warnings" class="warnings">
-          <li>Нет данных для анализа.</li>
-        </ul>
       </aside>
     </main>
   </div>
 
   <script src="app.js"></script>
+  <script src="app-patch.js"></script>
 </body>
 </html>
