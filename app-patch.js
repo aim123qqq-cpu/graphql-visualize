@@ -1,624 +1,509 @@
 (function () {
   "use strict";
 
-  const $ = (selector) => document.querySelector(selector);
-  let userViewportChanged = false;
-  let userMovedNode = false;
-  let lastSignature = "";
-  let pointerStart = null;
-  let selectedNodeId = "";
-  let selectedEdgeId = "";
-  let enhancing = false;
-  let pendingEnhance = false;
-  let observer = null;
-  let observedSvg = null;
-  let dragging = null;
-  const observerOptions = { childList: true, subtree: true };
+  const sample = `type Query {
+  me: User!
+  feed: [Post!]!
+}
 
-  function observeSvg(svg) {
-    if (!observer || !svg) return;
-    observer.disconnect();
-    observedSvg = svg;
-    observer.observe(svg, observerOptions);
-  }
+type User {
+  id: ID!
+  username: String!
+  email: String!
+  posts: [Post!]!
+}
 
-  function scheduleEnhance() {
-    if (pendingEnhance) return;
-    pendingEnhance = true;
-    queueMicrotask(() => {
-      pendingEnhance = false;
-      enhance();
-    });
-  }
+type Post {
+  id: ID!
+  title: String!
+  body: String!
+  author: User!
+}`;
 
-  function ensurePanelIcons() {
-    const left = $("#leftPanelBtn");
-    const right = $("#rightPanelBtn");
-    if (left && !left.querySelector(".sidebar-icon")) {
-      left.innerHTML = '<span class="sidebar-icon" aria-hidden="true"></span>';
-    }
-    if (right && !right.querySelector(".sidebar-icon")) {
-      right.innerHTML = '<span class="sidebar-icon mirrored" aria-hidden="true"></span>';
-    }
-  }
+  const state = {
+    graph: { nodes: [], edges: [] },
+    pan: { x: 40, y: 40 },
+    zoom: 1,
+    positions: {},
+    selected: "",
+    selectedEdge: "",
+    fit: true
+  };
 
-  function unwrapType(type) {
-    return String(type || "").replace(/[![\]\s]/g, "");
-  }
+  const $ = (id) => document.getElementById(id);
+  const builtins = new Set(["String", "Int", "Float", "Boolean", "ID"]);
 
-  function shortType(type, max = 24) {
-    const text = String(type || "");
-    return text.length > max ? text.slice(0, max - 3) + "..." : text;
-  }
-
-  function splitFieldRows() {
-    document.querySelectorAll(".field-row").forEach((row) => {
-      if (row.querySelector(".field-type")) return;
-      const texts = [...row.querySelectorAll("text.field")];
-      if (!texts.length) return;
-      const first = texts[0];
-      const x = Number(first.getAttribute("x")) || 12;
-      const y = Number(first.getAttribute("y")) || 48;
-      const width = Number(row.closest("[data-node]")?.querySelector("rect")?.getAttribute("width")) || 260;
-      const combined = texts.map((text) => text.textContent || "").join(" ").trim();
-      const divider = combined.indexOf(":");
-      const fieldName = row.dataset.field || (divider >= 0 ? combined.slice(0, divider).trim() : combined);
-      const fieldType = divider >= 0 ? combined.slice(divider + 1).trim() : "";
-      row.dataset.field = fieldName;
-      row.dataset.type = unwrapType(fieldType);
-      texts.forEach((text) => text.remove());
-      const nameEl = document.createElementNS("http://www.w3.org/2000/svg", "text");
-      nameEl.setAttribute("class", "field field-name");
-      nameEl.setAttribute("x", String(x));
-      nameEl.setAttribute("y", String(y));
-      nameEl.textContent = fieldName;
-      row.appendChild(nameEl);
-      const typeEl = document.createElementNS("http://www.w3.org/2000/svg", "text");
-      typeEl.setAttribute("class", "field field-type");
-      typeEl.setAttribute("x", String(width - x));
-      typeEl.setAttribute("y", String(y));
-      typeEl.setAttribute("text-anchor", "end");
-      typeEl.textContent = shortType(fieldType);
-      row.appendChild(typeEl);
-    });
-  }
-
-  function applyNodeSkin(nodes) {
-    nodes.forEach((node) => {
-      const rect = node.el.querySelector("rect");
-      if (!rect) return;
-      node.width = Math.max(320, node.width);
-      rect.setAttribute("width", String(node.width));
-      rect.setAttribute("rx", "10");
-      let header = node.el.querySelector(".node-header");
-      if (!header) {
-        header = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-        header.setAttribute("class", "node-header");
-        header.setAttribute("x", "0");
-        header.setAttribute("y", "0");
-        header.setAttribute("rx", "10");
-        node.el.insertBefore(header, rect.nextSibling);
-      }
-      header.setAttribute("width", String(node.width));
-      header.setAttribute("height", "40");
-      const title = node.el.querySelector("text.title");
-      if (title) {
-        title.setAttribute("x", "14");
-        title.setAttribute("y", "24");
-      }
-      const kind = node.el.querySelector("text.kind");
-      const kindText = kind ? kind.textContent || "type" : "type";
-      if (kind) kind.style.display = "none";
-      let badge = node.el.querySelector(".node-kind-badge");
-      if (!badge) {
-        badge = document.createElementNS("http://www.w3.org/2000/svg", "g");
-        badge.setAttribute("class", "node-kind-badge");
-        const pill = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-        pill.setAttribute("class", "node-kind-pill");
-        pill.setAttribute("rx", "11");
-        pill.setAttribute("height", "22");
-        const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
-        text.setAttribute("class", "node-kind-text");
-        text.setAttribute("text-anchor", "middle");
-        badge.appendChild(pill);
-        badge.appendChild(text);
-        node.el.appendChild(badge);
-      }
-      const label = node.id === "Query" ? "root" : kindText;
-      const pillWidth = Math.max(42, label.length * 7 + 18);
-      const pill = badge.querySelector(".node-kind-pill");
-      const text = badge.querySelector(".node-kind-text");
-      pill.setAttribute("x", String(node.width - pillWidth - 10));
-      pill.setAttribute("y", "9");
-      pill.setAttribute("width", String(pillWidth));
-      text.setAttribute("x", String(node.width - pillWidth / 2 - 10));
-      text.setAttribute("y", "24");
-      text.textContent = label;
-      node.el.classList.toggle("root-node", node.id === "Query");
-      node.el.querySelectorAll(".field-row").forEach((row) => {
-        const type = row.querySelector(".field-type");
-        const name = row.querySelector(".field-name");
-        if (type) type.setAttribute("x", String(node.width - 18));
-        if (name) name.setAttribute("x", "18");
-        updateFieldPort(row, node.width);
-      });
-    });
-  }
-
-  function updateFieldPort(row, width) {
-    const type = row.dataset.type || "";
-    const name = row.querySelector(".field-name");
-    const isScalar = ["String", "Int", "Float", "Boolean", "ID"].includes(type) || type === "enumvalue" || !type;
-    let port = row.querySelector(".field-port");
-    if (isScalar) {
-      if (port) port.remove();
-      return;
-    }
-    if (!port) {
-      port = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-      port.setAttribute("class", "field-port");
-      port.setAttribute("r", "3");
-      row.appendChild(port);
-    }
-    const y = Number((name || row.querySelector(".field"))?.getAttribute("y")) || 48;
-    port.setAttribute("cx", String(width + 1));
-    port.setAttribute("cy", String(y - 3));
-  }
-
-  function nodeInfo(nodeEl) {
-    const rect = nodeEl.querySelector("rect");
-    return {
-      el: nodeEl,
-      id: nodeEl.dataset.node,
-      x: Number(nodeEl.dataset.x) || 0,
-      y: Number(nodeEl.dataset.y) || 0,
-      width: Number(rect && rect.getAttribute("width")) || 260,
-      height: Number(rect && rect.getAttribute("height")) || 88,
-      fields: [...nodeEl.querySelectorAll(".field-row")]
+  function init() {
+    const build = $("buildBtn");
+    const sampleBtn = $("sampleBtn");
+    const optimize = $("optimizeBtn");
+    const file = $("fileInput");
+    const density = $("densityInput");
+    const search = $("searchInput");
+    const modeButtons = document.querySelectorAll(".mode");
+    if (build) build.onclick = buildGraph;
+    if (sampleBtn) sampleBtn.onclick = () => {
+      $("schemaInput").value = sample;
+      buildGraph();
     };
-  }
-
-  function parseEdges(svg) {
-    return [...svg.querySelectorAll("[data-edge]")].map((edgeEl) => {
-      const id = edgeEl.dataset.edge || "";
-      const split = id.split(":");
-      const pair = split.shift() || "";
-      const [source, target] = pair.split("->");
-      const label = split.join(":");
-      const key = source < target ? source + "|" + target : target + "|" + source;
-      return { edgeEl, id, source, target, label, key };
-    }).filter((item) => item.source && item.target);
-  }
-
-  function chooseCenter(nodes, edges) {
-    const degree = new Map(nodes.map((node) => [node.id, 0]));
-    edges.forEach((edge) => {
-      degree.set(edge.source, (degree.get(edge.source) || 0) + 1);
-      degree.set(edge.target, (degree.get(edge.target) || 0) + 1);
-    });
-    const roots = { Query: 0, Mutation: 1, Subscription: 2 };
-    return [...nodes].sort((a, b) => (roots[a.id] ?? 10) - (roots[b.id] ?? 10) || (degree.get(b.id) || 0) - (degree.get(a.id) || 0) || a.id.localeCompare(b.id))[0];
-  }
-
-  function spiderLayout(nodes, edges) {
-    if (!nodes.length || userMovedNode) return;
-    const center = chooseCenter(nodes, edges);
-    if (!center) return;
-    const neighbors = new Map(nodes.map((node) => [node.id, new Set()]));
-    edges.forEach((edge) => {
-      if (neighbors.has(edge.source) && neighbors.has(edge.target)) {
-        neighbors.get(edge.source).add(edge.target);
-        neighbors.get(edge.target).add(edge.source);
-      }
-    });
-    const rings = new Map([[center.id, 0]]);
-    const queue = [center.id];
-    for (let index = 0; index < queue.length; index += 1) {
-      const id = queue[index];
-      [...(neighbors.get(id) || [])].sort().forEach((next) => {
-        if (!rings.has(next)) {
-          rings.set(next, (rings.get(id) || 0) + 1);
-          queue.push(next);
-        }
-      });
-    }
-    nodes.forEach((node) => {
-      if (!rings.has(node.id)) rings.set(node.id, Math.max(1, Math.ceil(Math.sqrt(rings.size + 1))));
-    });
-    const grouped = new Map();
-    nodes.forEach((node) => {
-      const ring = rings.get(node.id) || 0;
-      if (!grouped.has(ring)) grouped.set(ring, []);
-      grouped.get(ring).push(node);
-    });
-    const density = Number($("#densityInput")?.value || 100) / 100;
-    const positioned = new Map();
-    [...grouped.keys()].sort((a, b) => a - b).forEach((ring) => {
-      const items = grouped.get(ring).sort((a, b) => (neighbors.get(b.id)?.size || 0) - (neighbors.get(a.id)?.size || 0) || a.id.localeCompare(b.id));
-      if (ring === 0) {
-        items.forEach((node, index) => positioned.set(node.id, { x: index * 120, y: 0 }));
-        return;
-      }
-      const maxNodeWidth = Math.max(...items.map((node) => node.width));
-      const maxNodeHeight = Math.max(...items.map((node) => node.height));
-      const tangentGap = (maxNodeWidth + 130) * density;
-      const crowdedRadius = (items.length * tangentGap) / (Math.PI * 2);
-      const radius = Math.max(ring * (maxNodeWidth + maxNodeHeight + 170) * density, crowdedRadius);
-      items.forEach((node, index) => {
-        const angle = -Math.PI / 2 + (index / Math.max(1, items.length)) * Math.PI * 2 + (ring % 2 ? 0 : Math.PI / Math.max(4, items.length));
-        positioned.set(node.id, {
-          x: Math.cos(angle) * radius - node.width / 2,
-          y: Math.sin(angle) * radius - node.height / 2
-        });
-      });
-    });
-    spreadOverlaps(nodes, positioned);
-    normalizePositions(nodes, positioned);
-    nodes.forEach((node) => {
-      const point = positioned.get(node.id);
-      node.x = point.x;
-      node.y = point.y;
-      node.el.dataset.x = String(point.x);
-      node.el.dataset.y = String(point.y);
-      node.el.setAttribute("transform", `translate(${point.x}, ${point.y})`);
-    });
-  }
-
-  function normalizePositions(nodes, positioned) {
-    const minX = Math.min(...nodes.map((node) => positioned.get(node.id).x));
-    const minY = Math.min(...nodes.map((node) => positioned.get(node.id).y));
-    nodes.forEach((node) => {
-      const point = positioned.get(node.id);
-      point.x = point.x - minX + 70;
-      point.y = point.y - minY + 70;
-    });
-  }
-
-  function spreadOverlaps(nodes, positioned) {
-    const gapX = 90;
-    const gapY = 70;
-    for (let pass = 0; pass < 80; pass += 1) {
-      let moved = false;
-      for (let i = 0; i < nodes.length; i += 1) {
-        for (let j = i + 1; j < nodes.length; j += 1) {
-          const a = nodes[i];
-          const b = nodes[j];
-          const pa = positioned.get(a.id);
-          const pb = positioned.get(b.id);
-          const ax = pa.x + a.width / 2;
-          const ay = pa.y + a.height / 2;
-          const bx = pb.x + b.width / 2;
-          const by = pb.y + b.height / 2;
-          const minX = (a.width + b.width) / 2 + gapX;
-          const minY = (a.height + b.height) / 2 + gapY;
-          const dx = bx - ax || 1;
-          const dy = by - ay || 1;
-          const overlapX = minX - Math.abs(dx);
-          const overlapY = minY - Math.abs(dy);
-          if (overlapX > 0 && overlapY > 0) {
-            moved = true;
-            if (overlapX < overlapY) {
-              const push = overlapX / 2;
-              pa.x -= Math.sign(dx) * push;
-              pb.x += Math.sign(dx) * push;
-            } else {
-              const push = overlapY / 2;
-              pa.y -= Math.sign(dy) * push;
-              pb.y += Math.sign(dy) * push;
-            }
-          }
-        }
-      }
-      if (!moved) return;
-    }
-  }
-
-  function fieldY(info, name, targetName) {
-    const field = info.fields.find((item) => name ? item.dataset.field === name : item.dataset.type === targetName);
-    const text = field && field.querySelector(".field-name, .field");
-    return text ? Number(text.getAttribute("y")) - 3 : info.height / 2;
-  }
-
-  function targetY(info, sourceName) {
-    const field = info.fields.find((item) => item.dataset.type === sourceName || (item.textContent || "").includes(sourceName));
-    const text = field && field.querySelector(".field-name, .field");
-    return text ? Number(text.getAttribute("y")) - 3 : Math.min(info.height - 18, 34);
-  }
-
-  function edgeLane(edge, groups) {
-    const ids = groups.get(edge.key) || [edge.id];
-    return (ids.indexOf(edge.id) - (ids.length - 1) / 2) * 18;
-  }
-
-  function updateFieldRows(nodes) {
-    nodes.forEach((node) => {
-      const width = node.width;
-      node.el.querySelectorAll(".field-row").forEach((row) => {
-        const text = row.querySelector(".field-name, .field");
-        if (!text) return;
-        const y = Number(text.getAttribute("y")) - 12;
-        let line = row.querySelector(".field-row-line");
-        if (!line) {
-          line = document.createElementNS("http://www.w3.org/2000/svg", "line");
-          line.setAttribute("class", "field-row-line");
-          row.insertBefore(line, row.firstChild);
-        }
-        line.setAttribute("x1", "0");
-        line.setAttribute("x2", String(width));
-        line.setAttribute("y1", String(y));
-        line.setAttribute("y2", String(y));
-      });
-    });
-  }
-
-  function updateEdges(nodes, edges) {
-    const nodeMap = new Map(nodes.map((node) => [node.id, node]));
-    const groups = new Map();
-    edges.forEach((edge) => {
-      if (!groups.has(edge.key)) groups.set(edge.key, []);
-      groups.get(edge.key).push(edge.id);
-    });
-    edges.forEach((edge) => {
-      const source = nodeMap.get(edge.source);
-      const target = nodeMap.get(edge.target);
-      const path = edge.edgeEl.querySelector("path");
-      if (!source || !target || !path) return;
-      const right = source.x + source.width / 2 <= target.x + target.width / 2;
-      const sx = right ? source.x + source.width : source.x;
-      const tx = right ? target.x : target.x + target.width;
-      const sy = source.y + fieldY(source, edge.label, edge.target);
-      const ty = target.y + targetY(target, edge.source);
-      const lane = edgeLane(edge, groups);
-      const direction = right ? 1 : -1;
-      const elbow = direction * (Math.max(54, Math.min(170, Math.abs(tx - sx) / 2)) + Math.abs(lane));
-      const leadX = sx + elbow;
-      const trailX = tx - elbow;
-      const laneY = (sy + ty) / 2 + lane;
-      path.setAttribute("d", `M ${sx} ${sy} H ${leadX} V ${laneY} H ${trailX} V ${ty} H ${tx}`);
-    });
-  }
-
-  function viewport(svg) {
-    const group = svg.querySelector("g[transform]");
-    const transform = group ? group.getAttribute("transform") || "" : "";
-    const match = transform.match(/translate\(([-\d.]+),\s*([-\d.]+)\)\s*scale\(([-\d.]+)\)/);
-    return {
-      group,
-      panX: match ? Number(match[1]) : 0,
-      panY: match ? Number(match[2]) : 0,
-      zoom: match ? Number(match[3]) : 1
+    if (optimize) optimize.onclick = () => {
+      state.positions = {};
+      state.fit = true;
+      render();
     };
-  }
-
-  function svgPoint(svg, event) {
-    const rect = svg.getBoundingClientRect();
-    const view = viewport(svg);
-    return {
-      x: (event.clientX - rect.left - view.panX) / view.zoom,
-      y: (event.clientY - rect.top - view.panY) / view.zoom
+    if (file) file.onchange = loadFile;
+    if (density) density.oninput = () => {
+      state.positions = {};
+      state.fit = true;
+      render();
     };
-  }
-
-  function refreshConnections(svg) {
-    const nodes = [...svg.querySelectorAll("[data-node]")].map(nodeInfo);
-    updateEdges(nodes, parseEdges(svg));
-  }
-
-  function bindDirectControls(svg) {
-    if (!svg) return;
-    svg.onmousedown = (event) => {
-      const nodeEl = event.target.closest("[data-node]");
-      if (nodeEl) {
-        const point = svgPoint(svg, event);
-        const current = {
-          x: Number(nodeEl.dataset.x) || 0,
-          y: Number(nodeEl.dataset.y) || 0
-        };
-        dragging = {
-          type: "node",
-          id: nodeEl.dataset.node,
-          dx: point.x - current.x,
-          dy: point.y - current.y
-        };
-        userMovedNode = true;
-        userViewportChanged = true;
-        event.preventDefault();
-        event.stopPropagation();
-        return;
-      }
-      const view = viewport(svg);
-      dragging = {
-        type: "canvas",
-        x: event.clientX,
-        y: event.clientY,
-        panX: view.panX,
-        panY: view.panY
+    if (search) search.oninput = render;
+    modeButtons.forEach((button) => {
+      button.onclick = () => {
+        modeButtons.forEach((item) => item.classList.toggle("active", item === button));
+        state.positions = {};
+        state.fit = true;
+        render();
       };
-      userViewportChanged = true;
-      event.preventDefault();
-    };
-    window.onmousemove = (event) => {
-      if (!dragging) return;
-      if (dragging.type === "node") {
-        const nodeEl = svg.querySelector(`[data-node="${CSS.escape(dragging.id)}"]`);
-        if (!nodeEl) return;
-        const point = svgPoint(svg, event);
-        const x = point.x - dragging.dx;
-        const y = point.y - dragging.dy;
-        nodeEl.dataset.x = String(x);
-        nodeEl.dataset.y = String(y);
-        nodeEl.setAttribute("transform", `translate(${x}, ${y})`);
-        refreshConnections(svg);
-        event.preventDefault();
-        return;
-      }
-      const view = viewport(svg);
-      if (!view.group) return;
-      const x = dragging.panX + event.clientX - dragging.x;
-      const y = dragging.panY + event.clientY - dragging.y;
-      view.group.setAttribute("transform", `translate(${x}, ${y}) scale(${view.zoom})`);
-      event.preventDefault();
-    };
-    window.onmouseup = () => {
-      dragging = null;
-    };
-    svg.onwheel = (event) => {
-      const view = viewport(svg);
-      if (!view.group) return;
-      event.preventDefault();
-      userViewportChanged = true;
-      const zoom = Math.min(2.4, Math.max(0.35, view.zoom * (event.deltaY > 0 ? 0.9 : 1.1)));
-      view.group.setAttribute("transform", `translate(${view.panX}, ${view.panY}) scale(${zoom})`);
-    };
-  }
-
-  function escapeHtml(value) {
-    return String(value || "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" }[char]));
-  }
-
-  function detailsForNode(nodeEl) {
-    const title = nodeEl.querySelector(".title")?.textContent || nodeEl.dataset.node || "";
-    const kind = nodeEl.querySelector(".node-kind-text")?.textContent || "type";
-    const fields = [...nodeEl.querySelectorAll(".field-row")].slice(0, 40).map((row) => {
-      const name = row.querySelector(".field-name")?.textContent || row.dataset.field || "";
-      const type = row.querySelector(".field-type")?.textContent || row.dataset.type || "";
-      return `<li><strong>${escapeHtml(name)}</strong>: ${escapeHtml(type)}</li>`;
-    }).join("");
-    return `<div class="detail-card"><h3>${escapeHtml(title)}</h3><p class="muted">${escapeHtml(kind)}</p><ul class="field-list">${fields}</ul></div>`;
-  }
-
-  function detailsForEdge(edgeEl) {
-    const id = edgeEl.dataset.edge || "";
-    const split = id.split(":");
-    const [source, target] = (split.shift() || "").split("->");
-    const label = split.join(":") || "Ñ‚Ğ¸Ğ¿";
-    return `<div class="detail-card"><h3>${escapeHtml(source)} -> ${escapeHtml(target)}</h3><p class="muted">Ğ¡Ğ²ÑĞ·ÑŒ Ñ‡ĞµÑ€ĞµĞ· Ğ¿Ğ¾Ğ»Ğµ: ${escapeHtml(label)}</p></div>`;
-  }
-
-  function applySelection() {
-    document.querySelectorAll(".node.selected, .node.highlight").forEach((item) => {
-      if (!selectedNodeId || item.dataset.node !== selectedNodeId) item.classList.remove("selected");
     });
-    document.querySelectorAll(".edge.selected").forEach((item) => item.classList.remove("selected"));
-    if (selectedNodeId) {
-      const node = document.querySelector(`[data-node="${CSS.escape(selectedNodeId)}"]`);
-      if (node) node.classList.add("selected");
-    }
-    if (selectedEdgeId) {
-      const edge = document.querySelector(`[data-edge="${CSS.escape(selectedEdgeId)}"] .edge`);
-      if (edge) edge.classList.add("selected");
-    }
+    buildGraph();
   }
 
-  function selectGraphItem(event) {
-    const svg = event.target.closest("#graphSvg");
-    if (!svg) return;
-    const details = $("#details");
-    const node = event.target.closest("[data-node]");
-    const edge = event.target.closest("[data-edge]");
-    event.preventDefault();
-    event.stopImmediatePropagation();
-    if (node) {
-      selectedNodeId = node.dataset.node || "";
-      selectedEdgeId = "";
-      if (details) details.innerHTML = detailsForNode(node);
-    } else if (edge) {
-      selectedNodeId = "";
-      selectedEdgeId = edge.dataset.edge || "";
-      if (details) details.innerHTML = detailsForEdge(edge);
-    } else {
-      selectedNodeId = "";
-      selectedEdgeId = "";
-      if (details) details.innerHTML = '<p class="muted">Ğ’Ñ‹Ğ±ĞµÑ€Ğ¸Ñ‚Ğµ ÑƒĞ·ĞµĞ» Ğ¸Ğ»Ğ¸ ÑĞ²ÑĞ·ÑŒ Ğ½Ğ° Ğ³Ñ€Ğ°Ñ„Ğµ.</p>';
-    }
-    applySelection();
+  function loadFile(event) {
+    const file = event.target.files && event.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      $("schemaInput").value = String(reader.result || "");
+      buildGraph();
+    };
+    reader.readAsText(file);
   }
 
-  function fitGraph(svg, nodes) {
-    if (!nodes.length || userViewportChanged || userMovedNode) return;
-    const group = svg.querySelector("g[transform]");
-    if (!group) return;
-    const minX = Math.min(...nodes.map((node) => node.x));
-    const minY = Math.min(...nodes.map((node) => node.y));
-    const maxX = Math.max(...nodes.map((node) => node.x + node.width));
-    const maxY = Math.max(...nodes.map((node) => node.y + node.height));
-    const width = Math.max(800, svg.clientWidth || 800);
-    const height = Math.max(520, svg.clientHeight || 520);
-    const graphWidth = Math.max(1, maxX - minX);
-    const wraphHeight = Math.max(1, maxY - minY);
-    const padding = 56;
-    const zoom = Math.min(1.05, Math.max(0.22, Math.min((width - padding * 2) / graphWidth, (height - padding * 2) / graphHeight)));
-    const panX = (width - graphWidth * zoom) / 2 - minX * zoom;
-    const panY = (height - graphHeight * zoom) / 2 - minY * zoom;
-    group.setAttribute("transform", `translate(${panX}, ${panY}) scale(${zoom})`);
-  }
-
-  function enhance() {
-    if (enhancing) return;
-    enhancing = true;
-    if (observer) observer.disconnect();
+  function buildGraph() {
+    const raw = ($("schemaInput")?.value || "").trim();
+    if (!raw) return;
     try {
-      ensurePanelIcons();
-      splitFieldRows();
-      const svg = $("#graphSvg");
-      if (!svg) return;
-      const nodes = [...svg.querySelectorAll("[data-node]")].map(nodeInfo);
-      const edges = parseEdges(svg);
-      const signature = nodes.map((node) => node.id).sort().join("|") + "::" + edges.length;
-      if (signature !== lastSignature) {
-        userViewportChanged = false;
-        userMovedNode = false;
-        lastSignature = signature;
-      }
-      spiderLayout(nodes, edges);
-      applyNodeSkin(nodes);
-      updateFieldRows(nodes);
-      updateEdges(nodes, edges);
-      applySelection();
-      fitGraph(svg, nodes);
-      bindDirectControls(svg);
-      observeSvg(svg);
-    } finally {
-      enhancing = false;
+      state.graph = raw[0] === "{" ? parseIntrospection(JSON.parse(raw)) : parseSdl(raw);
+      state.positions = {};
+      state.selected = "";
+      state.selectedEdge = "";
+      state.fit = true;
+      render();
+    } catch (error) {
+      warn(["Parse error: " + error.message]);
     }
   }
 
-  observer = new MutationObserver(() => scheduleEnhance());
-  window.addEventListener("load", () => {
-    const svg = $("#graphSvg");
-    if (svg) observeSvg(svg);
-    enhance();
-  });
-  document.addEventListener("mousedown", (event) => {
-    if (event.target.closest("#graphSvg")) {
-      pointerStart = {
-        x: event.clientX,
-        y: event.clientY,
-        node: Boolean(event.target.closest("[data-node]"))
+  function parseSdl(raw) {
+    const text = raw.replace(/#[^\n\r]*/g, "").replace(/"""[\s\S]*?"""/g, "");
+    const nodes = new Map();
+    const edges = [];
+    const defs = /(?:extend\s+)?(type|interface|input|enum)\s+([_A-Za-z][_0-9A-Za-z]*)[^{]*\{([\s\S]*?)\}|(?:extend\s+)?union\s+([_A-Za-z][_0-9A-Za-z]*)\s*=\s*([^\n\r]+)|scalar\s+([_A-Za-z][_0-9A-Za-z]*)/g;
+    let match;
+    while ((match = defs.exec(text))) {
+      const kind = match[1] ? match[1].toUpperCase() : match[4] ? "UNION" : "SCALAR";
+      const name = match[2] || match[4] || match[6];
+      const node = ensure(nodes, name, kind);
+      if (kind === "UNION") {
+        match[5].split("|").map((item) => item.trim()).filter(Boolean).forEach((target) => {
+          node.fields.push({ name: target, type: target });
+          edges.push(edge(name, target, "union"));
+        });
+      } else if (kind === "ENUM") {
+        node.fields = match[3].split(/\s+/).filter(Boolean).map((item) => ({ name: item, type: "enum value" }));
+      } else if (kind !== "SCALAR") {
+        fields(match[3]).forEach((field) => {
+          node.fields.push(field);
+          const target = unwrap(field.type);
+          if (target && target !== name) edges.push(edge(name, target, field.name));
+        });
+      }
+    }
+    edges.forEach((item) => {
+      if (!nodes.has(item.target)) ensure(nodes, item.target, builtins.has(item.target) ? "SCALAR" : "OBJECT");
+    });
+    return { nodes: [...nodes.values()], edges: unique(edges) };
+  }
+
+  function parseIntrospection(json) {
+    const schema = json.data?.__schema || json.__schema || json;
+    if (!schema.types) throw new Error("No __schema.types found");
+    const nodes = new Map();
+    const edges = [];
+    schema.types.forEach((type) => {
+      if (!type || !type.name || type.name.startsWith("__")) return;
+      const node = ensure(nodes, type.name, type.kind);
+      (type.fields || type.inputFields || []).forEach((field) => {
+        const target = typeName(field.type);
+        const text = typeText(field.type);
+        node.fields.push({ name: field.name, type: text });
+        if (target && target !== type.name) edges.push(edge(type.name, target, field.name));
+      });
+      (type.enumValues || []).forEach((value) => node.fields.push({ name: value.name, type: "enum value" }));
+    });
+    return { nodes: [...nodes.values()], edges: unique(edges) };
+  }
+
+  function fields(body) {
+    return body.split(/\n|;/).map((line) => line.trim()).filter(Boolean).map((line) => {
+      const clean = line.replace(/@[_A-Za-z][_0-9A-Za-z]*(\([^)]*\))?/g, "").replace(/\s+/g, " ");
+      const match = clean.match(/^([_A-Za-z][_0-9A-Za-z]*)\s*(?:\([^)]*\))?\s*:\s*([^=]+)(?:=.*)?$/);
+      return match ? { name: match[1], type: match[2].trim() } : null;
+    }).filter(Boolean);
+  }
+
+  function ensure(map, name, kind) {
+    if (!map.has(name)) map.set(name, { id: name, name, kind, fields: [] });
+    return map.get(name);
+  }
+
+  function edge(source, target, label) {
+    return { id: source + "->" + target + ":" + label, source, target, label };
+  }
+
+  function unique(edges) {
+    const seen = new Set();
+    return edges.filter((item) => {
+      const key = item.source + "|" + item.target + "|" + item.label;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }
+
+  function layout() {
+    const mode = document.querySelector(".mode.active")?.dataset.mode || "types";
+    const showScalars = $("showScalars")?.checked !== false;
+    const showBuiltins = $("showBuiltins")?.checked === true;
+    const allowed = new Set();
+    state.graph.nodes.forEach((node) => {
+      if (!showBuiltins && builtins.has(node.name)) return;
+      if (!showScalars && ["SCALAR", "ENUM"].includes(node.kind)) return;
+      allowed.add(node.id);
+    });
+    let edges = state.graph.edges.filter((item) => allowed.has(item.source) && allowed.has(item.target));
+    if (mode === "types") edges = uniquePairs(edges);
+    const nodes = state.graph.nodes.filter((node) => allowed.has(node.id)).map(metric);
+    const levels = levelsFor(nodes, edges);
+    const columns = new Map();
+    nodes.forEach((node) => {
+      const level = levels.get(node.id) || 0;
+      if (!columns.has(level)) columns.set(level, []);
+      columns.get(level).push(node);
+    });
+    sortColumns(columns, edges, levels);
+    const density = Number($("densityInput")?.value || 100) / 100;
+    let x = 70;
+    const placed = [];
+    [...columns.keys()].sort((a, b) => a - b).forEach((level) => {
+      const items = columns.get(level);
+      const maxWidth = Math.max(...items.map((node) => node.width));
+      let y = 70;
+      items.forEach((node) => {
+        const saved = state.positions[node.id];
+        placed.push({ ...node, x: saved ? saved.x : x, y: saved ? saved.y : y });
+        y += node.height + 62 * density;
+      });
+      x += maxWidth + 170 * density;
+    });
+    return { nodes: placed, edges };
+  }
+
+  function uniquePairs(edges) {
+    const seen = new Set();
+    return edges.filter((item) => {
+      const key = item.source + "|" + item.target;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }
+
+  function levelsFor(nodes, edges) {
+    const ids = new Set(nodes.map((node) => node.id));
+    const out = new Map(nodes.map((node) => [node.id, []]));
+    const inc = new Map(nodes.map((node) => [node.id, []]));
+    edges.forEach((item) => {
+      if (!ids.has(item.source) || !ids.has(item.target)) return;
+      out.get(item.source).push(item.target);
+      inc.get(item.target).push(item.source);
+    });
+    const roots = nodes.filter((node) => ["Query", "Mutation", "Subscription"].includes(node.name));
+    if (!roots.length && nodes.length) roots.push(nodes[0]);
+    const levels = new Map();
+    const queue = [];
+    roots.forEach((node) => {
+      levels.set(node.id, 0);
+      queue.push(node.id);
+    });
+    for (let i = 0; i < queue.length; i += 1) {
+      const id = queue[i];
+      out.get(id).forEach((target) => {
+        const next = (levels.get(id) || 0) + 1;
+        if (!levels.has(target) || next < levels.get(target)) {
+          levels.set(target, next);
+          queue.push(target);
+        }
+      });
+    }
+    nodes.forEach((node) => {
+      if (levels.has(node.id)) return;
+      const parents = inc.get(node.id).filter((id) => levels.has(id));
+      levels.set(node.id, parents.length ? Math.max(...parents.map((id) => levels.get(id))) + 1 : 0);
+    });
+    return levels;
+  }
+
+  function sortColumns(columns, edges, levels) {
+    const order = new Map();
+    [...columns.keys()].sort((a, b) => a - b).forEach((level) => {
+      columns.get(level).sort((a, b) => rootWeight(a.name) - rootWeight(b.name) || a.name.localeCompare(b.name));
+      columns.get(level).forEach((node, index) => order.set(node.id, index));
+    });
+    for (let pass = 0; pass < 5; pass += 1) {
+      [...columns.keys()].sort((a, b) => a - b).forEach((level) => {
+        columns.get(level).sort((a, b) => bary(a.id, edges, levels, order) - bary(b.id, edges, levels, order) || a.name.localeCompare(b.name));
+        columns.get(level).forEach((node, index) => order.set(node.id, index));
+      });
+    }
+  }
+
+  function bary(id, edges, levels, order) {
+    const level = levels.get(id) || 0;
+    const linked = edges.filter((item) => item.source === id || item.target === id)
+      .map((item) => item.source === id ? item.target : item.source)
+      .filter((item) => order.has(item) && Math.abs((levels.get(item) || 0) - level) <= 1);
+    return linked.length ? linked.reduce((sum, item) => sum + order.get(item), 0) / linked.length : order.get(id) || 0;
+  }
+
+  function metric(node) {
+    const rows = node.fields.slice(0, 10).map((field, index) => ({
+      field,
+      y: 58 + index * 24,
+      type: short(field.type)
+    }));
+    return { ...node, width: 320, height: Math.max(86, 58 + rows.length * 24 + 16), rows };
+  }
+
+  function render() {
+    const graph = layout();
+    const svg = $("graphSvg");
+    if (!svg) return;
+    $("emptyState")?.classList.toggle("hidden", graph.nodes.length > 0);
+    stats(graph);
+    if (state.fit) {
+      fit(graph);
+      state.fit = false;
+    }
+    const byId = new Map(graph.nodes.map((node) => [node.id, node]));
+    const groups = new Map();
+    graph.edges.forEach((item) => {
+      const key = item.source < item.target ? item.source + "|" + item.target : item.target + "|" + item.source;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(item.id);
+    });
+    const edgeSvg = graph.edges.map((item) => drawEdge(item, byId, groups)).join("");
+    const nodeSvg = graph.nodes.map(drawNode).join("");
+    const maxX = Math.max(900, ...graph.nodes.map((node) => node.x + node.width + 120));
+    const maxY = Math.max(620, ...graph.nodes.map((node) => node.y + node.height + 120));
+    svg.setAttribute("viewBox", `0 0 ${Math.max(900, svg.clientWidth || 900)} ${Math.max(620, svg.clientHeight || 620)}`);
+    svg.innerHTML = `<defs><marker id="arrow-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="var(--edge-a)"></path></marker><marker id="arrow-b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="var(--edge-b)"></path></marker><marker id="arrow-c" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="var(--edge-c)"></path></marker></defs><g transform="translate(${state.pan.x}, ${state.pan.y}) scale(${state.zoom})"><rect x="-40" y="-40" width="${maxX + 80}" height="${maxY + 80}" fill="transparent"></rect>${edgeSvg}${nodeSvg}</g>`;
+    bindSvg(svg, graph);
+  }
+
+  function drawNode(node) {
+    const kind = node.name === "Query" ? "root" : readable(node.kind);
+    const badgeWidth = Math.max(42, kind.length * 7 + 18);
+    const rows = node.rows.map((row) => {
+      const typeName = unwrap(row.field.type);
+      const port = builtins.has(typeName) || !typeName ? "" : `<circle class="field-port" cx="${node.width + 1}" cy="${row.y - 3}" r="3"></circle>`;
+      return `<g class="field-row" data-field="${esc(row.field.name)}" data-type="${esc(typeName)}"><text class="field field-name" x="18" y="${row.y}">${esc(row.field.name)}</text><text class="field field-type" x="${node.width - 18}" y="${row.y}" text-anchor="end">${esc(row.type)}</text>${port}</g>`;
+    }).join("");
+    return `<g class="node ${node.name === "Query" ? "root-node" : ""} ${state.selected === node.id ? "selected" : ""}" data-node="${esc(node.id)}" data-x="${node.x}" data-y="${node.y}" transform="translate(${node.x}, ${node.y})"><rect width="${node.width}" height="${node.height}" rx="10"></rect><rect class="node-header" width="${node.width}" height="40" rx="10"></rect><text class="title" font-weight="700" x="14" y="24">${esc(node.name)}</text><g class="node-kind-badge"><rect class="node-kind-pill" x="${node.width - badgeWidth - 10}" y="9" width="${badgeWidth}" height="22" rx="11"></rect><text class="node-kind-text" x="${node.width - badgeWidth / 2 - 10}" y="24" text-anchor="middle">${esc(kind)}</text></g>${rows}</g>`;
+  }
+
+  function drawEdge(item, byId, groups) {
+    const source = byId.get(item.source);
+    const target = byId.get(item.target);
+    if (!source || !target) return "";
+    const right = source.x + source.width / 2 <= target.x + target.width / 2;
+    const sx = right ? source.x + source.width : source.x;
+    const tx = right ? target.x : target.x + target.width;
+    const sy = source.y + sourceY(source, item.label);
+    const ty = target.y + targetY(target, source.name);
+    const key = item.source < item.target ? item.source + "|" + item.target : item.target + "|" + item.source;
+    const list = groups.get(key) || [item.id];
+    const lane = (list.indexOf(item.id) - (list.length - 1) / 2) * 22;
+    const dir = right ? 1 : -1;
+    const leadX = sx + dir * (80 + Math.abs(lane));
+    const trailX = tx - dir * (80 + Math.abs(lane));
+    const laneY = (sy + ty) / 2 + lane;
+    const d = `M ${sx} ${sy} H ${leadX} V ${laneY} H ${trailX} V ${ty} H ${tx}`;
+    const colorClass = edgeColorClass(item);
+    const marker = colorClass === "color-b" ? "arrow-b" : colorClass === "color-c" ? "arrow-c" : "arrow-a";
+    return `<g data-edge="${esc(item.id)}"><path class="edge ${colorClass} ${state.selectedEdge === item.id ? "selected" : ""}" style="marker-end:url(#${marker})" d="${d}"></path></g>`;
+  }
+
+  function edgeColorClass(item) {
+    const text = item.id || item.source + item.target + item.label;
+    let hash = 0;
+    for (let index = 0; index < text.length; index += 1) hash = (hash + text.charCodeAt(index)) % 3;
+    return ["color-a", "color-b", "color-c"][hash];
+  }
+
+  function bindSvg(svg, graph) {
+    svg.querySelectorAll("[data-node]").forEach((nodeEl) => {
+      nodeEl.onclick = (event) => {
+        event.stopPropagation();
+        state.selected = nodeEl.dataset.node || "";
+        state.selectedEdge = "";
+        details(graph.nodes.find((node) => node.id === state.selected));
+        render();
       };
-    }
-  }, true);
-  document.addEventListener("mousemove", (event) => {
-    if (!pointerStart) return;
-    if (Math.hypot(event.clientX - pointerStart.x, event.clientY - pointerStart.y) > 4) {
-      if (pointerStart.node) userMovedNode = true;
-      userViewportChanged = true;
-    }
-  }, true);
-  document.addEventListener("mouseup", () => {
-    pointerStart = null;
-  }, true);
-  document.addEventListener("wheel", (event) => {
-    if (event.target.closest("#graphSvg")) userViewportChanged = true;
-  }, true);
-  document.addEventListener("click", (event) => {
-    if (event.target.closest("#graphSvg")) return selectGraphItem(event);
-    if (event.target.closest("#buildBtn, #sampleBtn, #optimizeBtn, .mode, #densityInput")) {
-      userViewportChanged = false;
-      userMovedNode = false;
-      selectedNodeId = "";
-      selectedEdgeId = "";
-    }
-    scheduleEnhance();
-  }, true);
-})();
+    });
+    svg.querySelectorAll("[data-edge]").forEach((edgeEl) => {
+      edgeEl.onclick = (event) => {
+        event.stopPropagation();
+        state.selected = "";
+        state.selectedEdge = edgeEl.dataset.edge || "";
+        render();
+      };
+    });
+    svg.onclick = () => {
+      state.selected = "";
+      state.selectedEdge = "";
+      details(null);
+      render();
+    };
+    bindDrag(svg);
+  }
+
+  function bindDrag(svg) {
+    let moving = null;
+    let canvas = null;
+    svg.onmousedown = (event) => {
+      const node = event.target.closest("[data-node]");
+      if (node) {
+        const point = svgPoint(svg, event);
+        moving = { id: node.dataset.node, dx: point.x - Number(node.dataset.x), dy: point.y - Number(node.dataset.y) };
+        event.stopPropagation();
+        returnÂˆBˆØ[˜\ÈHÈˆ]™[˜ÛY[Nˆ]™[˜ÛY[K[ˆÈ‹‹œİ]Kœ[ˆHNÂˆNÂˆÚ[™İË›Û›[İ\Ù[[İ™HH
+]™[
+HOˆÂˆYˆ
+[İš[™ÊHÂˆÛÛœİÚ[Hİ™ÔÚ[
+İ™Ë]™[
+NÂˆİ]KœÜÚ][ÛœÖÛ[İš[™ËšYHHÈˆÚ[H[İš[™Ë™NˆÚ[HH[İš[™Ë™HNÂˆ™[™\Š
+NÂˆ™]\›ÂˆBˆYˆ
+XØ[˜\ÊH™]\›Âˆİ]Kœ[ˆHÈˆØ[˜\Ëœ[‹
+È]™[˜ÛY[HØ[˜\ËNˆØ[˜\Ëœ[‹H
+È]™[˜ÛY[HHØ[˜\ËHNÂˆ™[™\Š
+NÂˆNÂˆÚ[™İË›Û›[İ\Ù]\H
+
+HOˆÂˆ[İš[™ÈH[ÂˆØ[˜\ÈH[ÂˆNÂˆİ™Ë›ÛÚY[H
+]™[
+HOˆÂˆ]™[œ™]™[Y˜][
+
+NÂˆİ]K›ÛÛHHX]›Z[Š‹X]›X^
+Œİ]K›ÛÛH
+ˆ
+]™[™[VHˆÈHˆKŒJJJNÂˆ™[™\Š
+NÂˆNÂˆB‚ˆ[˜İ[Ûˆš]
+Ü˜\
+HÂˆYˆ
+YÜ˜\››Ù\Ë›[™İ
+H™]\›ÂˆÛÛœİİ™ÈH	
+™Ü˜\İ™ÈŠNÂˆÛÛœİZ[–HX]›Z[Š‹‹™Ü˜\››Ù\Ë›X\
+
+›ÙJHOˆ›ÙK
+JNÂˆÛÛœİZ[–HHX]›Z[Š‹‹™Ü˜\››Ù\Ë›X\
+
+›ÙJHOˆ›ÙKJJNÂˆÛÛœİX^HX]›X^
+‹‹™Ü˜\››Ù\Ë›X\
+
+›ÙJHOˆ›ÙK
+È›ÙKÚY
+JNÂˆÛÛœİX^HHX]›X^
+‹‹™Ü˜\››Ù\Ë›X\
+
+›ÙJHOˆ›ÙKH
+È›ÙKšZYÚ
+JNÂˆÛÛœİÚYHX]›X^
+Lİ™Ë˜ÛY[ÚYL
+NÂˆÛÛœİZYÚHX]›X^
+ŒŒİ™Ë˜ÛY[ZYÚŒŒ
+NÂˆÛÛœİ›ÛÛHHX]›Z[ŠKX]›X^
+ŒNX]›Z[Š
+ÚYHLLŠHÈ
+X^HZ[–JK
+ZYÚHLLŠHÈ
+X^HHZ[–HJJJJNÂˆİ]K›ÛÛHH›ÛÛNÂˆİ]Kœ[ˆHÈˆ
+ÚYH
+X^HZ[–
+H
+ˆ›ÛÛJHÈˆHZ[–
+ˆ›ÛÛKNˆ
+ZYÚH
+X^HHZ[–JH
+ˆ›ÛÛJHÈˆHZ[–H
+ˆ›ÛÛHNÂˆB‚ˆ[˜İ[Ûˆİ]ÊÜ˜\
+HÂˆÛÛœİİ]ÈH	
+œİ]ÈŠNÂˆYˆ
+\İ]ÊH™]\›ÂˆÛÛœİšY[ÈHÜ˜\››Ù\Ëœ™YXÙJ
+İ[K›ÙJHOˆİ[H
+È›ÙK™šY[Ë›[™İ
+NÂˆİ]Ëš[›™\’SH]İ›Û™Ï‰ÙÜ˜\››Ù\Ë›[™İOÜİ›Û™ÏÜ[´`´.4/ô/´,ÜÜ[Ù]]İ›Û™Ï‰ÙÜ˜\™YÙ\Ë›[™İOÜİ›Û™ÏÜ[´`t,´cô-ô-t.OÜÜ[Ù]]İ›Û™Ï‰ÙšY[ßOÜİ›Û™ÏÜ[´/ô/´.ô-t.OÜÜ[Ù]˜ÂˆB‚ˆ[˜İ[Ûˆ]Z[Ê›ÙJHÂˆÛÛœİ›ŞH	
+™]Z[ÈŠNÂˆYˆ
+X›Ş
+H™]\›ÂˆYˆ
+[›ÙJHÂˆ›Şš[›™\’SH	ÏÛ\ÜÏH›]]Y´$´bô,t-t`4.4`´-H4,t.ô/´.ˆ4.4.ô.4`t,´cô-ôc4/t,4,ô`4,4a4-KÜ‰ÎÂˆ™]\›ÂˆBˆ›Şš[›™\’SH]ˆÛ\ÜÏH™]Z[XØ\™Ï‰Ù\ØÊ›ÙK›˜[YJ_OÚÏÛ\ÜÏH›]]Y‰Ù\ØÊ™XYX›J›ÙKšÚ[™
+J_OÜ[Û\ÜÏH™šY[[\İ‰Û›ÙK™šY[Ë›X\
+
+šY[
+HOˆOİ›Û™Ï‰Ù\ØÊšY[›˜[YJ_OÜİ›Û™Ïˆ	Ù\ØÊšY[\J_OÛO˜
+Kš›Ú[ŠˆŠ_Oİ[Ù]˜ÂˆB‚ˆ[˜İ[ÛˆØ\›Š][\ÊHÂˆÛÛœİ›ŞH	
+Ø\›š[™ÜÈŠNÂˆYˆ
+›Ş
+H›Şš[›™\’SH][\Ë›X\
+
+][JHOˆHÛ\ÜÏH˜˜Y‰Ù\ØÊ][J_OÛO˜
+Kš›Ú[ŠˆŠNÂˆB‚ˆ[˜İ[ÛˆÛİ\˜ÙVJ›ÙKšY[
+HÂˆÛÛœİ›İÈH›ÙKœ›İÜË™š[™
+
+][JHOˆ][K™šY[›˜[YHOOHšY[
+NÂˆ™]\›ˆ›İÈÈ›İËHHÈˆ›ÙKšZYÚÈÂˆB‚ˆ[˜İ[Ûˆ\™Ù]J›ÙKÛİ\˜ÙJHÂˆÛÛœİ›İÈH›ÙKœ›İÜË™š[™
+
+][JHOˆ[Ü˜\
+][K™šY[\JHOOHÛİ\˜ÙJNÂˆ™]\›ˆ›İÈÈ›İËHHÈˆX]›Z[Š›ÙKšZYÚHNÌ
+NÂˆB‚ˆ[˜İ[Ûˆİ™ÔÚ[
+İ™Ë]™[
+HÂˆÛÛœİ™XİHİ™Ë™Ù]›İ[™[™ĞÛY[™Xİ
+
+NÂˆ™]\›ˆÈˆ
+]™[˜ÛY[H™Xİ›YHİ]Kœ[‹
+HÈİ]K›ÛÛKNˆ
+]™[˜ÛY[HH™XİÜHİ]Kœ[‹JHÈİ]K›ÛÛHNÂˆB‚ˆ[˜İ[Ûˆ›ÛİÙZYÚ
+˜[YJHÂˆ™]\›ˆÈ]Y\Nˆ]]][ÛˆKİXœØÜš\[ÛˆˆVÛ˜[YWHÏÈLÂˆB‚ˆ[˜İ[Ûˆ™XYX›JÚ[™
+HÂˆ™]\›ˆÈĞ’‘PÕˆ\H‹S•T‘PÑNˆš[\™˜XÙH‹S”UÓĞ’‘PÕˆš[œ]‹S”Uˆš[œ]‹S•SNˆ™[[H‹S’SÓˆ[š[Ûˆ‹ĞĞSTˆœØØ[\ˆˆVÚÚ[™Hİš[™ÊÚ[™\HŠKÓİÙ\Ø\ÙJ
+NÂˆB‚ˆ[˜İ[Ûˆ\S˜[YJ™YŠHÂˆÚ[H
+™YŠHÂˆYˆ
+™Y‹›˜[YJH™]\›ˆ™Y‹›˜[YNÂˆ™YˆH™Y‹›Ù•\NÂˆBˆ™]\›ˆˆÂˆB‚ˆ[˜İ[Ûˆ\U^
+™YŠHÂˆYˆ
+\™YŠH™]\›ˆˆÂˆYˆ
+™Y‹šÚ[™OOH““Ó—Ó•SŠH™]\›ˆ\U^
+™Y‹›Ù•\JH
+ÈˆHÂˆYˆ
+™Y‹šÚ[™OOH“TÕŠH™]\›ˆ–Èˆ
+È\U^
+™Y‹›Ù•\JH
+È—HÂˆ™]\›ˆ™Y‹›˜[YH™Y‹šÚ[™ˆÂˆB‚ˆ[˜İ[Ûˆ[Ü˜\
+\JHÂˆ™]\›ˆİš[™Ê\HˆŠKœ™\XÙJÖÈV×W×KÙËˆŠNÂˆB‚ˆ[˜İ[ÛˆÚÜ
+\JHÂˆÛÛœİ^Hİš[™Ê\HˆŠNÂˆ™]\›ˆ^›[™İˆÈ^œÛXÙJŒJH
+È‹‹‹ˆˆˆ^ÂˆB‚ˆ[˜İ[Ûˆ\ØÊ˜[YJHÂˆ™]\›ˆİš[™Ê˜[YHˆŠKœ™\XÙJÖÉˆ‰×KÙË
+Ú\ŠHOˆ
+È‰ˆˆ‰˜[\È‹ˆ‰›È‹ˆˆ‰™İÈ‹	È‰Îˆ‰œ][İÈ‹‰Èˆ‰ˆÌÎNÈˆVØÚ\—JJNÂˆB‚ˆÚ[™İË˜Y]™[\İ[™\Š›ØY‹
+
+HOˆÙ][Y[İ]
+[š]
+JNÂŸJJ
+NÂ
