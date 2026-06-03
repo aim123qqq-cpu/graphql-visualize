@@ -2,7 +2,8 @@
   "use strict";
 
   const $ = (selector) => document.querySelector(selector);
-  let userInteracting = false;
+  let userViewportChanged = false;
+  let userMovedNode = false;
   let lastSignature = "";
   let pointerStart = null;
 
@@ -62,6 +63,8 @@
     nodes.forEach((node) => {
       const rect = node.el.querySelector("rect");
       if (!rect) return;
+      node.width = Math.max(320, node.width);
+      rect.setAttribute("width", String(node.width));
       rect.setAttribute("rx", "10");
       let header = node.el.querySelector(".node-header");
       if (!header) {
@@ -73,11 +76,11 @@
         node.el.insertBefore(header, rect.nextSibling);
       }
       header.setAttribute("width", String(node.width));
-      header.setAttribute("height", "34");
+      header.setAttribute("height", "40");
       const title = node.el.querySelector("text.title");
       if (title) {
         title.setAttribute("x", "14");
-        title.setAttribute("y", "21");
+        title.setAttribute("y", "24");
       }
       const kind = node.el.querySelector("text.kind");
       const kindText = kind ? kind.textContent || "type" : "type";
@@ -102,13 +105,40 @@
       const pill = badge.querySelector(".node-kind-pill");
       const text = badge.querySelector(".node-kind-text");
       pill.setAttribute("x", String(node.width - pillWidth - 10));
-      pill.setAttribute("y", "7");
+      pill.setAttribute("y", "9");
       pill.setAttribute("width", String(pillWidth));
       text.setAttribute("x", String(node.width - pillWidth / 2 - 10));
-      text.setAttribute("y", "22");
+      text.setAttribute("y", "24");
       text.textContent = label;
       node.el.classList.toggle("root-node", node.id === "Query");
+      node.el.querySelectorAll(".field-row").forEach((row) => {
+        const type = row.querySelector(".field-type");
+        const name = row.querySelector(".field-name");
+        if (type) type.setAttribute("x", String(node.width - 18));
+        if (name) name.setAttribute("x", "18");
+        updateFieldPort(row, node.width);
+      });
     });
+  }
+
+  function updateFieldPort(row, width) {
+    const type = row.dataset.type || "";
+    const name = row.querySelector(".field-name");
+    const isScalar = ["String", "Int", "Float", "Boolean", "ID"].includes(type) || type === "enumvalue" || !type;
+    let port = row.querySelector(".field-port");
+    if (isScalar) {
+      if (port) port.remove();
+      return;
+    }
+    if (!port) {
+      port = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+      port.setAttribute("class", "field-port");
+      port.setAttribute("r", "3");
+      row.appendChild(port);
+    }
+    const y = Number((name || row.querySelector(".field"))?.getAttribute("y")) || 48;
+    port.setAttribute("cx", String(width + 1));
+    port.setAttribute("cy", String(y - 3));
   }
 
   function nodeInfo(nodeEl) {
@@ -147,7 +177,7 @@
   }
 
   function spiderLayout(nodes, edges) {
-    if (!nodes.length || userInteracting) return;
+    if (!nodes.length || userMovedNode) return;
     const center = chooseCenter(nodes, edges);
     if (!center) return;
     const neighbors = new Map(nodes.map((node) => [node.id, new Set()]));
@@ -278,7 +308,7 @@
   }
 
   function fitGraph(svg, nodes) {
-    if (!nodes.length || userInteracting) return;
+    if (!nodes.length || userViewportChanged || userMovedNode) return;
     const group = svg.querySelector("g[transform]");
     if (!group) return;
     const minX = Math.min(...nodes.map((node) => node.x));
@@ -305,7 +335,8 @@
     const edges = parseEdges(svg);
     const signature = nodes.map((node) => node.id).sort().join("|") + "::" + edges.length;
     if (signature !== lastSignature) {
-      userInteracting = false;
+      userViewportChanged = false;
+      userMovedNode = false;
       lastSignature = signature;
     }
     spiderLayout(nodes, edges);
@@ -322,22 +353,32 @@
     enhance();
   });
   document.addEventListener("mousedown", (event) => {
-    if (event.target.closest("#graphSvg")) pointerStart = { x: event.clientX, y: event.clientY };
+    if (event.target.closest("#graphSvg")) {
+      pointerStart = {
+        x: event.clientX,
+        y: event.clientY,
+        node: Boolean(event.target.closest("[data-node]"))
+      };
+    }
   }, true);
   document.addEventListener("mousemove", (event) => {
     if (!pointerStart) return;
     if (Math.hypot(event.clientX - pointerStart.x, event.clientY - pointerStart.y) > 4) {
-      userInteracting = true;
+      if (pointerStart.node) userMovedNode = true;
+      userViewportChanged = true;
     }
   }, true);
   document.addEventListener("mouseup", () => {
     pointerStart = null;
   }, true);
   document.addEventListener("wheel", (event) => {
-    if (event.target.closest("#graphSvg")) userInteracting = true;
+    if (event.target.closest("#graphSvg")) userViewportChanged = true;
   }, true);
   document.addEventListener("click", (event) => {
-    if (event.target.closest("#buildBtn, #sampleBtn, #optimizeBtn, .mode, #densityInput")) userInteracting = false;
+    if (event.target.closest("#buildBtn, #sampleBtn, #optimizeBtn, .mode, #densityInput")) {
+      userViewportChanged = false;
+      userMovedNode = false;
+    }
     requestAnimationFrame(enhance);
     setTimeout(() => requestAnimationFrame(enhance), 0);
   }, true);
