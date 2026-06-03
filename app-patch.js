@@ -12,6 +12,7 @@
   let pendingEnhance = false;
   let observer = null;
   let observedSvg = null;
+  let dragging = null;
   const observerOptions = { childList: true, subtree: true };
 
   function observeSvg(svg) {
@@ -238,8 +239,11 @@
         items.forEach((node, index) => positioned.set(node.id, { x: index * 120, y: 0 }));
         return;
       }
-      const crowdedRadius = (items.length * 135 * density) / (Math.PI * 2);
-      const radius = Math.max(ring * 230 * density + Math.max(0, ring - 1) * 48 * density, crowdedRadius);
+      const maxNodeWidth = Math.max(...items.map((node) => node.width));
+      const maxNodeHeight = Math.max(...items.map((node) => node.height));
+      const tangentGap = (maxNodeWidth + 130) * density;
+      const crowdedRadius = (items.length * tangentGap) / (Math.PI * 2);
+      const radius = Math.max(ring * (maxNodeWidth + maxNodeHeight + 170) * density, crowdedRadius);
       items.forEach((node, index) => {
         const angle = -Math.PI / 2 + (index / Math.max(1, items.length)) * Math.PI * 2 + (ring % 2 ? 0 : Math.PI / Math.max(4, items.length));
         positioned.set(node.id, {
@@ -248,6 +252,7 @@
         });
       });
     });
+    spreadOverlaps(nodes, positioned);
     normalizePositions(nodes, positioned);
     nodes.forEach((node) => {
       const point = positioned.get(node.id);
@@ -267,6 +272,45 @@
       point.x = point.x - minX + 70;
       point.y = point.y - minY + 70;
     });
+  }
+
+  function spreadOverlaps(nodes, positioned) {
+    const gapX = 90;
+    const gapY = 70;
+    for (let pass = 0; pass < 80; pass += 1) {
+      let moved = false;
+      for (let i = 0; i < nodes.length; i += 1) {
+        for (let j = i + 1; j < nodes.length; j += 1) {
+          const a = nodes[i];
+          const b = nodes[j];
+          const pa = positioned.get(a.id);
+          const pb = positioned.get(b.id);
+          const ax = pa.x + a.width / 2;
+          const ay = pa.y + a.height / 2;
+          const bx = pb.x + b.width / 2;
+          const by = pb.y + b.height / 2;
+          const minX = (a.width + b.width) / 2 + gapX;
+          const minY = (a.height + b.height) / 2 + gapY;
+          const dx = bx - ax || 1;
+          const dy = by - ay || 1;
+          const overlapX = minX - Math.abs(dx);
+          const overlapY = minY - Math.abs(dy);
+          if (overlapX > 0 && overlapY > 0) {
+            moved = true;
+            if (overlapX < overlapY) {
+              const push = overlapX / 2;
+              pa.x -= Math.sign(dx) * push;
+              pb.x += Math.sign(dx) * push;
+            } else {
+              const push = overlapY / 2;
+              pa.y -= Math.sign(dy) * push;
+              pb.y += Math.sign(dy) * push;
+            }
+          }
+        }
+      }
+      if (!moved) return;
+    }
   }
 
   function fieldY(info, name, targetName) {
@@ -325,9 +369,107 @@
       const sy = source.y + fieldY(source, edge.label, edge.target);
       const ty = target.y + targetY(target, edge.source);
       const lane = edgeLane(edge, groups);
-      const mid = Math.max(52, Math.abs(tx - sx) / 2);
-      path.setAttribute("d", `M ${sx} ${sy} C ${sx + mid} ${sy + lane}, ${tx - mid} ${ty + lane}, ${tx} ${ty}`);
+      const direction = right ? 1 : -1;
+      const elbow = direction * (Math.max(54, Math.min(170, Math.abs(tx - sx) / 2)) + Math.abs(lane));
+      const leadX = sx + elbow;
+      const trailX = tx - elbow;
+      const laneY = (sy + ty) / 2 + lane;
+      path.setAttribute("d", `M ${sx} ${sy} H ${leadX} V ${laneY} H ${trailX} V ${ty} H ${tx}`);
     });
+  }
+
+  function viewport(svg) {
+    const group = svg.querySelector("g[transform]");
+    const transform = group ? group.getAttribute("transform") || "" : "";
+    const match = transform.match(/translate\(([-\d.]+),\s*([-\d.]+)\)\s*scale\(([-\d.]+)\)/);
+    return {
+      group,
+      panX: match ? Number(match[1]) : 0,
+      panY: match ? Number(match[2]) : 0,
+      zoom: match ? Number(match[3]) : 1
+    };
+  }
+
+  function svgPoint(svg, event) {
+    const rect = svg.getBoundingClientRect();
+    const view = viewport(svg);
+    return {
+      x: (event.clientX - rect.left - view.panX) / view.zoom,
+      y: (event.clientY - rect.top - view.panY) / view.zoom
+    };
+  }
+
+  function refreshConnections(svg) {
+    const nodes = [...svg.querySelectorAll("[data-node]")].map(nodeInfo);
+    updateEdges(nodes, parseEdges(svg));
+  }
+
+  function bindDirectControls(svg) {
+    if (!svg) return;
+    svg.onmousedown = (event) => {
+      const nodeEl = event.target.closest("[data-node]");
+      if (nodeEl) {
+        const point = svgPoint(svg, event);
+        const current = {
+          x: Number(nodeEl.dataset.x) || 0,
+          y: Number(nodeEl.dataset.y) || 0
+        };
+        dragging = {
+          type: "node",
+          id: nodeEl.dataset.node,
+          dx: point.x - current.x,
+          dy: point.y - current.y
+        };
+        userMovedNode = true;
+        userViewportChanged = true;
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+      const view = viewport(svg);
+      dragging = {
+        type: "canvas",
+        x: event.clientX,
+        y: event.clientY,
+        panX: view.panX,
+        panY: view.panY
+      };
+      userViewportChanged = true;
+      event.preventDefault();
+    };
+    window.onmousemove = (event) => {
+      if (!dragging) return;
+      if (dragging.type === "node") {
+        const nodeEl = svg.querySelector(`[data-node="${CSS.escape(dragging.id)}"]`);
+        if (!nodeEl) return;
+        const point = svgPoint(svg, event);
+        const x = point.x - dragging.dx;
+        const y = point.y - dragging.dy;
+        nodeEl.dataset.x = String(x);
+        nodeEl.dataset.y = String(y);
+        nodeEl.setAttribute("transform", `translate(${x}, ${y})`);
+        refreshConnections(svg);
+        event.preventDefault();
+        return;
+      }
+      const view = viewport(svg);
+      if (!view.group) return;
+      const x = dragging.panX + event.clientX - dragging.x;
+      const y = dragging.panY + event.clientY - dragging.y;
+      view.group.setAttribute("transform", `translate(${x}, ${y}) scale(${view.zoom})`);
+      event.preventDefault();
+    };
+    window.onmouseup = () => {
+      dragging = null;
+    };
+    svg.onwheel = (event) => {
+      const view = viewport(svg);
+      if (!view.group) return;
+      event.preventDefault();
+      userViewportChanged = true;
+      const zoom = Math.min(2.4, Math.max(0.35, view.zoom * (event.deltaY > 0 ? 0.9 : 1.1)));
+      view.group.setAttribute("transform", `translate(${view.panX}, ${view.panY}) scale(${zoom})`);
+    };
   }
 
   function escapeHtml(value) {
@@ -403,7 +545,7 @@
     const width = Math.max(800, svg.clientWidth || 800);
     const height = Math.max(520, svg.clientHeight || 520);
     const graphWidth = Math.max(1, maxX - minX);
-    const graphHeight = Math.max(1, maxY - minY);
+    const wraphHeight = Math.max(1, maxY - minY);
     const padding = 56;
     const zoom = Math.min(1.05, Math.max(0.22, Math.min((width - padding * 2) / graphWidth, (height - padding * 2) / graphHeight)));
     const panX = (width - graphWidth * zoom) / 2 - minX * zoom;
@@ -434,6 +576,7 @@
       updateEdges(nodes, edges);
       applySelection();
       fitGraph(svg, nodes);
+      bindDirectControls(svg);
       observeSvg(svg);
     } finally {
       enhancing = false;
