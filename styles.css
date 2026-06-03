@@ -162,6 +162,14 @@ h2 {
 }
 
 .input-panel,
+details-panel {
+  position: relative;
+  padding: 14px;
+  overflow: visible;
+  transition: padding 160ms ease, border-width 160ms ease, box-shadow 160ms ease, background 160ms ease;
+}
+
+.input-panel,
 .details-panel {
   position: relative;
   padding: 14px;
@@ -450,14 +458,27 @@ body.theme-dark .canvas-wrap {
   fill: #243149;
 }
 
-.node .field-row line,
-.node .field-row-line {
+.node .field-type {
+  fill: var(--accent);
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 11px;
+}
+
+.node .field-name {
+  font-weight: 500;
+}
+
+.node .field-row line {
   stroke: var(--soft);
   stroke-width: 1;
 }
 
 body.theme-dark .node .field {
   fill: #b8c5d8;
+}
+
+body.theme-dark .node .field-type {
+  fill: #8fb4ff;
 }
 
 body.theme-dark .node .title {
