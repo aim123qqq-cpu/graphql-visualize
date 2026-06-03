@@ -6,6 +6,9 @@
   let userMovedNode = false;
   let lastSignature = "";
   let pointerStart = null;
+  let selectedNodeId = "";
+  let selectedEdgeId = "";
+  let enhancing = false;
 
   function ensurePanelIcons() {
     const left = $("#leftPanelBtn");
@@ -307,6 +310,68 @@
     });
   }
 
+  function escapeHtml(value) {
+    return String(value || "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" }[char]));
+  }
+
+  function detailsForNode(nodeEl) {
+    const title = nodeEl.querySelector(".title")?.textContent || nodeEl.dataset.node || "";
+    const kind = nodeEl.querySelector(".node-kind-text")?.textContent || "type";
+    const fields = [...nodeEl.querySelectorAll(".field-row")].slice(0, 40).map((row) => {
+      const name = row.querySelector(".field-name")?.textContent || row.dataset.field || "";
+      const type = row.querySelector(".field-type")?.textContent || row.dataset.type || "";
+      return `<li><strong>${escapeHtml(name)}</strong>: ${escapeHtml(type)}</li>`;
+    }).join("");
+    return `<div class="detail-card"><h3>${escapeHtml(title)}</h3><p class="muted">${escapeHtml(kind)}</p><ul class="field-list">${fields}</ul></div>`;
+  }
+
+  function detailsForEdge(edgeEl) {
+    const id = edgeEl.dataset.edge || "";
+    const split = id.split(":");
+    const [source, target] = (split.shift() || "").split("->");
+    const label = split.join(":") || "тип";
+    return `<div class="detail-card"><h3>${escapeHtml(source)} -> ${escapeHtml(target)}</h3><p class="muted">Связь через поле: ${escapeHtml(label)}</p></div>`;
+  }
+
+  function applySelection() {
+    document.querySelectorAll(".node.selected, .node.highlight").forEach((item) => {
+      if (!selectedNodeId || item.dataset.node !== selectedNodeId) item.classList.remove("selected");
+    });
+    document.querySelectorAll(".edge.selected").forEach((item) => item.classList.remove("selected"));
+    if (selectedNodeId) {
+      const node = document.querySelector(`[data-node="${CSS.escape(selectedNodeId)}"]`);
+      if (node) node.classList.add("selected");
+    }
+    if (selectedEdgeId) {
+      const edge = document.querySelector(`[data-edge="${CSS.escape(selectedEdgeId)}"] .edge`);
+      if (edge) edge.classList.add("selected");
+    }
+  }
+
+  function selectGraphItem(event) {
+    const svg = event.target.closest("#graphSvg");
+    if (!svg) return;
+    const details = $("#details");
+    const node = event.target.closest("[data-node]");
+    const edge = event.target.closest("[data-edge]");
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    if (node) {
+      selectedNodeId = node.dataset.node || "";
+      selectedEdgeId = "";
+      if (details) details.innerHTML = detailsForNode(node);
+    } else if (edge) {
+      selectedNodeId = "";
+      selectedEdgeId = edge.dataset.edge || "";
+      if (details) details.innerHTML = detailsForEdge(edge);
+    } else {
+      selectedNodeId = "";
+      selectedEdgeId = "";
+      if (details) details.innerHTML = '<p class="muted">Выберите узел или связь на графе.</p>';
+    }
+    applySelection();
+  }
+
   function fitGraph(svg, nodes) {
     if (!nodes.length || userViewportChanged || userMovedNode) return;
     const group = svg.querySelector("g[transform]");
@@ -327,10 +392,15 @@
   }
 
   function enhance() {
+    if (enhancing) return;
+    enhancing = true;
     ensurePanelIcons();
     splitFieldRows();
     const svg = $("#graphSvg");
-    if (!svg) return;
+    if (!svg) {
+      enhancing = false;
+      return;
+    }
     const nodes = [...svg.querySelectorAll("[data-node]")].map(nodeInfo);
     const edges = parseEdges(svg);
     const signature = nodes.map((node) => node.id).sort().join("|") + "::" + edges.length;
@@ -343,10 +413,12 @@
     applyNodeSkin(nodes);
     updateFieldRows(nodes);
     updateEdges(nodes, edges);
+    applySelection();
     fitGraph(svg, nodes);
+    enhancing = false;
   }
 
-  const observer = new MutationObserver(() => requestAnimationFrame(enhance));
+  const observer = new MutationObserver(() => enhance());
   window.addEventListener("load", () => {
     const svg = $("#graphSvg");
     if (svg) observer.observe(svg, { childList: true, subtree: true });
@@ -375,11 +447,13 @@
     if (event.target.closest("#graphSvg")) userViewportChanged = true;
   }, true);
   document.addEventListener("click", (event) => {
+    if (event.target.closest("#graphSvg")) return selectGraphItem(event);
     if (event.target.closest("#buildBtn, #sampleBtn, #optimizeBtn, .mode, #densityInput")) {
       userViewportChanged = false;
       userMovedNode = false;
+      selectedNodeId = "";
+      selectedEdgeId = "";
     }
-    requestAnimationFrame(enhance);
-    setTimeout(() => requestAnimationFrame(enhance), 0);
+    enhance();
   }, true);
 })();
