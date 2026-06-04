@@ -37,7 +37,8 @@
             <label for="schemaInput">SDL или introspection JSON</label>
             <textarea id="schemaInput" spellcheck="false" placeholder="Вставьте type Query { users: [User!]! } ..."></textarea>
             <div class="file-row">
-              <input id="fileInput" type="file" accept=".graphql,.gql,.json,.txt,application/json">
+              <label class="file-upload-btn" for="fileInput">Файл</label>
+              <input id="fileInput" class="file-input" type="file" accept=".graphql,.gql,.json,.txt,application/json">
               <span id="fileName">Файл не выбран</span>
             </div>
           </section>
@@ -53,7 +54,7 @@
 
           <section class="tab-page" id="themePage">
             <label for="accentInput">Акцент</label>
-            <input id="accentInput" type="color" value="#2f6fed">
+            <input id="accentInput" type="color" value="#e30611">
             <label for="densityInput">Плотность графа</label>
             <input id="densityInput" type="range" min="70" max="150" value="100">
             <label class="switch">
@@ -112,10 +113,6 @@
           <div id="details">
             <p class="muted">Выберите узел или связь на графе.</p>
           </div>
-          <h2>Проверка</h2>
-          <ul id="warnings" class="warnings">
-            <li>Нет данных для анализа.</li>
-          </ul>
         </div>
       </aside>
     </main>
