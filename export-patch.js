@@ -144,8 +144,8 @@
       if (!action) return;
       box.classList.remove("open");
       trigger?.setAttribute("aria-expanded", "false");
-      if (action === "svg") exportSvg(svg);
-      if (action === "png") exportPng(png);
+      if (action === "svg") exportSvg();
+      if (action === "png") exportPng();
       if (action === "drawio") exportDrawIo();
     });
     document.addEventListener("click", () => {
@@ -154,36 +154,158 @@
     });
   }
 
-  function exportSvg(button) {
-    if (button) {
-      button.click();
-      return;
-    }
-    const svg = document.getElementById("graphSvg");
-    if (svg) downloadText("schema.svg", `<?xml version="1.0" encoding="UTF-8"?>\n${svg.outerHTML}`, "image/svg+xml;charset=utf-8");
+  function exportSvg() {
+    const content = buildExportSvgString();
+    if (content) downloadText("schema.svg", content, "image/svg+xml;charset=utf-8");
   }
 
-  function exportPng(button) {
-    if (button) {
-      button.click();
-      return;
-    }
-    const svg = document.getElementById("graphSvg");
-    if (!svg) return;
+  function exportPng() {
+    const content = buildExportSvgString();
+    if (!content) return;
     const image = new Image();
-    const url = URL.createObjectURL(new Blob([new XMLSerializer().serializeToString(svg)], { type: "image/svg+xml;charset=utf-8" }));
+    const url = URL.createObjectURL(new Blob([content], { type: "image/svg+xml;charset=utf-8" }));
     image.onload = () => {
+      const size = exportBounds();
+      const scale = Math.max(2, Math.min(4, 2400 / Math.max(size.width, size.height, 1)));
       const canvas = document.createElement("canvas");
-      canvas.width = Math.max(1200, svg.clientWidth * 2);
-      canvas.height = Math.max(800, svg.clientHeight * 2);
+      canvas.width = Math.round(size.width * scale);
+      canvas.height = Math.round(size.height * scale);
       const ctx = canvas.getContext("2d");
-      ctx.fillStyle = getComputedStyle(document.body).getPropertyValue("--bg") || "#fff";
+      ctx.fillStyle = theme().bg;
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
       URL.revokeObjectURL(url);
       canvas.toBlob((blob) => downloadBlob("schema.png", blob), "image/png");
     };
     image.src = url;
+  }
+
+  function buildExportSvgString() {
+    const svg = document.getElementById("graphSvg");
+    const edges = svg?.querySelector(".edges-layer");
+    const nodes = svg?.querySelector(".nodes-layer");
+    if (!svg || !nodes) return "";
+    const size = exportBounds();
+    const defs = svg.querySelector("defs")?.outerHTML || exportDefs();
+    const edgeMarkup = edges ? sanitizeLayer(edges) : "";
+    const nodeMarkup = sanitizeLayer(nodes);
+    return [
+      '<?xml version="1.0" encoding="UTF-8"?>',
+      `<svg xmlns="http://www.w3.org/2000/svg" width="${round(size.width)}" height="${round(size.height)}" viewBox="${round(size.x)} ${round(size.y)} ${round(size.width)} ${round(size.height)}">`,
+      `<style>${exportCss()}</style>`,
+      defs,
+      `<rect x="${round(size.x)}" y="${round(size.y)}" width="${round(size.width)}" height="${round(size.height)}" fill="${theme().bg}"></rect>`,
+      edgeMarkup,
+      nodeMarkup,
+      "</svg>"
+    ].join("");
+  }
+
+  function sanitizeLayer(layer) {
+    const copy = layer.cloneNode(true);
+    copy.querySelectorAll(".graph-hit").forEach((item) => item.remove());
+    return new XMLSerializer().serializeToString(copy);
+  }
+
+  function exportBounds() {
+    const svg = document.getElementById("graphSvg");
+    const boxes = Array.from(svg?.querySelectorAll("[data-node]") || []).map(nodeBox);
+    Array.from(svg?.querySelectorAll("[data-edge]") || []).forEach((edge) => {
+      try {
+        const box = edge.getBBox();
+        boxes.push({ x: box.x, y: box.y, width: box.width, height: box.height });
+      } catch (error) {
+        // Browsers can refuse getBBox for transient SVG nodes; node bounds still give a sane export.
+      }
+    });
+    if (!boxes.length) return { x: 0, y: 0, width: 1200, height: 800 };
+    const padding = 72;
+    const minX = Math.min(...boxes.map((box) => box.x)) - padding;
+    const minY = Math.min(...boxes.map((box) => box.y)) - padding;
+    const maxX = Math.max(...boxes.map((box) => box.x + box.width)) + padding;
+    const maxY = Math.max(...boxes.map((box) => box.y + box.height)) + padding;
+    return { x: minX, y: minY, width: Math.max(1, maxX - minX), height: Math.max(1, maxY - minY) };
+  }
+
+  function exportCss() {
+    const t = theme();
+    return `
+      svg {
+        --accent: ${t.accent};
+        --panel: ${t.panel};
+        --ink: ${t.ink};
+        --muted: ${t.muted};
+        --line: ${t.line};
+        --edge: ${t.edge};
+        --edge-a: ${t.edgeA};
+        --edge-b: ${t.edgeB};
+        --edge-c: ${t.edgeC};
+        --edge-label-stroke: ${t.panel};
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      }
+      .node rect { fill: var(--panel); stroke: var(--line); stroke-width: 1.5; }
+      .node .node-header { fill: ${t.header}; stroke: var(--line); stroke-width: 1; }
+      .node.root-node .node-header { fill: var(--accent); stroke: var(--accent); }
+      .node.selected > rect:first-child, .node.highlight > rect:first-child { stroke: var(--accent); stroke-width: 3; }
+      .node text { fill: var(--ink); font-size: 13px; }
+      .node .title { font-size: 14px; font-weight: 700; }
+      .node.root-node .title { fill: #ffffff; }
+      .node .field { fill: ${t.field}; font-size: 12px; }
+      .node .field-type { fill: var(--accent); font-family: Consolas, "Courier New", monospace; font-weight: 700; }
+      .node .field-name { font-weight: 600; }
+      .node .field-port { fill: ${t.port}; stroke: ${t.portStroke}; stroke-width: 1.5; }
+      .node .node-kind-pill { fill: ${t.pill}; stroke: var(--line); stroke-width: 1; }
+      .node.root-node .node-kind-pill { fill: rgba(255,255,255,0.14); stroke: rgba(255,255,255,0.14); }
+      .node .node-kind-text { fill: var(--muted); font-size: 11px; font-weight: 700; text-transform: uppercase; }
+      .node.root-node .node-kind-text { fill: #ffffff; }
+      .edge { stroke: var(--edge); stroke-width: 1.4; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+      .edge.color-a { stroke: var(--edge-a); }
+      .edge.color-b { stroke: var(--edge-b); }
+      .edge.color-c { stroke: var(--edge-c); }
+      .edge.highlight, .edge.selected { stroke: var(--accent); stroke-width: 2.4; }
+      .edge-label { fill: var(--muted); font-size: 11px; paint-order: stroke; stroke: var(--edge-label-stroke); stroke-width: 4px; }
+    `;
+  }
+
+  function theme() {
+    const dark = document.body.classList.contains("theme-dark");
+    return dark ? {
+      bg: "#171717",
+      panel: "#202020",
+      header: "#192235",
+      pill: "#101827",
+      ink: "#f4f4f4",
+      muted: "#adadad",
+      field: "#b8c5d8",
+      line: "#343434",
+      accent: "#ff3b45",
+      edge: "#929292",
+      edgeA: "#ff3b45",
+      edgeB: "#60a5fa",
+      edgeC: "#f4f4f4",
+      port: "#8fa3c2",
+      portStroke: "#151e2d"
+    } : {
+      bg: "#f7f7f5",
+      panel: "#ffffff",
+      header: "#f6f8fb",
+      pill: "#f4f7fb",
+      ink: "#1f1f1f",
+      muted: "#6b6b6b",
+      field: "#667085",
+      line: "#e3e3df",
+      accent: "#e30611",
+      edge: "#8f8f8f",
+      edgeA: "#e30611",
+      edgeB: "#2563eb",
+      edgeC: "#111111",
+      port: "#95a3b8",
+      portStroke: "#ffffff"
+    };
+  }
+
+  function exportDefs() {
+    return '<defs><marker id="arrow-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="var(--edge-a)"></path></marker><marker id="arrow-b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="var(--edge-b)"></path></marker><marker id="arrow-c" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="var(--edge-c)"></path></marker></defs>';
   }
 
   function exportDrawIo() {
