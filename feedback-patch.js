@@ -15,10 +15,7 @@
     const style = document.createElement("style");
     style.id = "feedbackPatchStyles";
     style.textContent = `
-      .feedback-btn {
-        position: relative;
-      }
-
+      .feedback-btn { position: relative; }
       .feedback-btn::after {
         content: attr(data-tooltip);
         position: absolute;
@@ -40,13 +37,11 @@
         transform: translateY(-3px);
         transition: opacity 120ms ease, transform 120ms ease;
       }
-
       .feedback-btn:hover::after,
       .feedback-btn:focus-visible::after {
         opacity: 1;
         transform: translateY(0);
       }
-
       .feedback-overlay {
         position: fixed;
         inset: 0;
@@ -57,15 +52,8 @@
         padding: 18px;
         background: rgba(0, 0, 0, 0.36);
       }
-
-      body.theme-dark .feedback-overlay {
-        background: rgba(0, 0, 0, 0.62);
-      }
-
-      .feedback-overlay.open {
-        display: flex;
-      }
-
+      body.theme-dark .feedback-overlay { background: rgba(0, 0, 0, 0.62); }
+      .feedback-overlay.open { display: flex; }
       .feedback-dialog {
         width: min(560px, 100%);
         max-height: min(86vh, 760px);
@@ -78,7 +66,6 @@
         overflow: hidden;
         box-shadow: 0 24px 70px rgba(0, 0, 0, 0.24);
       }
-
       .feedback-head {
         display: flex;
         align-items: flex-start;
@@ -87,47 +74,26 @@
         padding: 18px 20px;
         border-bottom: 1px solid var(--line);
       }
-
-      .feedback-head h2 {
-        margin: 0 0 4px;
-        font-size: 18px;
-      }
-
-      .feedback-head p {
-        margin: 0;
-        color: var(--muted);
-      }
-
-      .feedback-close {
-        width: 34px;
-        min-width: 34px;
-        padding: 0;
-      }
-
+      .feedback-head h2 { margin: 0 0 4px; font-size: 18px; }
+      .feedback-head p { margin: 0; color: var(--muted); }
+      .feedback-close { width: 34px; min-width: 34px; padding: 0; }
       .feedback-form {
         display: grid;
         gap: 12px;
         padding: 18px 20px 20px;
         overflow: auto;
       }
-
       .feedback-grid {
         display: grid;
         grid-template-columns: 1fr 1fr;
         gap: 12px;
       }
-
-      .feedback-field {
-        display: grid;
-        gap: 6px;
-      }
-
+      .feedback-field { display: grid; gap: 6px; }
       .feedback-field label {
         color: var(--muted);
         font-size: 12px;
         font-weight: 700;
       }
-
       .feedback-field input,
       .feedback-field select,
       .feedback-field textarea {
@@ -139,12 +105,7 @@
         min-height: 36px;
         padding: 8px 10px;
       }
-
-      .feedback-field textarea {
-        min-height: 132px;
-        resize: vertical;
-      }
-
+      .feedback-field textarea { min-height: 132px; resize: vertical; }
       .feedback-actions {
         display: flex;
         align-items: center;
@@ -152,7 +113,6 @@
         gap: 10px;
         padding-top: 4px;
       }
-
       .feedback-status {
         flex: 1;
         min-width: 0;
@@ -160,21 +120,10 @@
         font-size: 12px;
         line-height: 1.25;
       }
-
-      .feedback-actions button[disabled] {
-        cursor: wait;
-        opacity: 0.68;
-      }
-
+      .feedback-actions button[disabled] { cursor: wait; opacity: 0.68; }
       @media (max-width: 620px) {
-        .feedback-grid {
-          grid-template-columns: 1fr;
-        }
-
-        .feedback-actions {
-          align-items: stretch;
-          flex-direction: column;
-        }
+        .feedback-grid { grid-template-columns: 1fr; }
+        .feedback-actions { align-items: stretch; flex-direction: column; }
       }
     `;
     document.head.appendChild(style);
@@ -198,7 +147,7 @@
     button.title = "Поделитесь мнением";
     button.setAttribute("aria-label", "Поделитесь мнением");
     button.addEventListener("click", openFeedback);
-    actions.insertBefore(button, actions.firstChild);
+    actions.appendChild(button);
   }
 
   function ensureModal() {
@@ -227,26 +176,14 @@
               <input id="feedbackContact" name="contact" type="text" placeholder="Email, Telegram или GitHub">
             </div>
           </div>
-          <div class="feedback-grid">
-            <div class="feedback-field">
-              <label for="feedbackType">Тип</label>
-              <select id="feedbackType" name="type">
-                <option value="Идея">Идея</option>
-                <option value="Баг">Баг</option>
-                <option value="Улучшение">Улучшение</option>
-                <option value="Вопрос">Вопрос</option>
-              </select>
-            </div>
-            <div class="feedback-field">
-              <label for="feedbackRating">Оценка</label>
-              <select id="feedbackRating" name="rating">
-                <option value="5">5 - отлично</option>
-                <option value="4">4 - хорошо</option>
-                <option value="3">3 - нормально</option>
-                <option value="2">2 - плохо</option>
-                <option value="1">1 - критично</option>
-              </select>
-            </div>
+          <div class="feedback-field">
+            <label for="feedbackType">Тип</label>
+            <select id="feedbackType" name="type">
+              <option value="Идея">Идея</option>
+              <option value="Баг">Баг</option>
+              <option value="Улучшение">Улучшение</option>
+              <option value="Вопрос">Вопрос</option>
+            </select>
           </div>
           <div class="feedback-field">
             <label for="feedbackMessage">Сообщение</label>
@@ -299,7 +236,6 @@
     const payload = {
       createdAt: new Date().toISOString(),
       type: String(data.get("type") || "ОС"),
-      rating: String(data.get("rating") || ""),
       name: String(data.get("name") || "").trim() || "Не указано",
       contact: String(data.get("contact") || "").trim() || "Не указано",
       message,
