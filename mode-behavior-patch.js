@@ -5,7 +5,7 @@
   window.__graphqlModeBehaviorPatchReady = true;
 
   const HELP = {
-    types: "Типы: чистая карта блоков. Поля скрыты, повторные связи объединены.",
+    types: "Типы: карта блоков. Поля приглушены, повторные связи объединены.",
     fields: "Поля: акцент на полях-ссылках. Остальные поля приглушены.",
     all: "Все: полная таблица полей и все найденные связи."
   };
@@ -29,13 +29,12 @@
         max-width: 360px;
       }
 
-      #graphSvg.mode-types .node .field-row,
-      #graphSvg.mode-types .node .field-port {
-        display: none;
+      #graphSvg.mode-types .node .field-row {
+        opacity: 0.34;
       }
 
-      #graphSvg.mode-types .node > rect:first-child {
-        height: 52px;
+      #graphSvg.mode-types .node .field-port {
+        opacity: 0.45;
       }
 
       #graphSvg.mode-fields .field-row.is-scalar-field {
