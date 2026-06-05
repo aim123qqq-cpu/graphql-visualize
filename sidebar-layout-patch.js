@@ -20,6 +20,47 @@
         left: 0;
         transform: none !important;
         box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+        transition:
+          top 320ms cubic-bezier(0.22, 1, 0.36, 1),
+          left 320ms cubic-bezier(0.22, 1, 0.36, 1),
+          border-color 160ms ease,
+          background 160ms ease,
+          color 160ms ease,
+          box-shadow 160ms ease;
+        will-change: top, left;
+      }
+
+      .workspace {
+        transition: grid-template-columns 340ms cubic-bezier(0.22, 1, 0.36, 1) !important;
+      }
+
+      .input-panel,
+      .details-panel {
+        transition:
+          padding 280ms cubic-bezier(0.22, 1, 0.36, 1),
+          border-width 280ms cubic-bezier(0.22, 1, 0.36, 1),
+          border-color 180ms ease,
+          background 220ms ease,
+          box-shadow 220ms ease !important;
+      }
+
+      .panel-content {
+        transition:
+          opacity 220ms ease,
+          transform 300ms cubic-bezier(0.22, 1, 0.36, 1),
+          visibility 220ms ease !important;
+      }
+
+      body.left-collapsed .input-panel .panel-content {
+        transform: translateX(-8px);
+      }
+
+      body.right-collapsed .details-panel .panel-content {
+        transform: translateX(8px);
+      }
+
+      .graph-panel .toolbar {
+        transition: padding 300ms cubic-bezier(0.22, 1, 0.36, 1);
       }
 
       .graph-panel .toolbar {
@@ -52,11 +93,10 @@
     window.addEventListener("resize", scheduleDock, { passive: true });
     document.addEventListener("click", (event) => {
       if (!event.target.closest?.("#leftPanelBtn, #rightPanelBtn")) return;
-      scheduleDock();
-      setTimeout(dockPanelButtons, 220);
+      animateDock(380);
     }, true);
 
-    const observer = new MutationObserver(scheduleDock);
+    const observer = new MutationObserver(() => animateDock(380));
     observer.observe(document.body, { attributes: true, attributeFilter: ["class"] });
 
     const graph = document.querySelector(".graph-panel");
@@ -70,6 +110,24 @@
   function scheduleDock() {
     cancelAnimationFrame(frame);
     frame = requestAnimationFrame(dockPanelButtons);
+  }
+
+  let animationFrame = 0;
+  let animationUntil = 0;
+  function animateDock(duration) {
+    animationUntil = Math.max(animationUntil, performance.now() + duration);
+    if (animationFrame) return;
+    animationFrame = requestAnimationFrame(animationStep);
+  }
+
+  function animationStep() {
+    dockPanelButtons();
+    if (performance.now() < animationUntil) {
+      animationFrame = requestAnimationFrame(animationStep);
+      return;
+    }
+    animationFrame = 0;
+    dockPanelButtons();
   }
 
   function dockPanelButtons() {
