@@ -72,7 +72,6 @@ function normalizeFeedback(payload) {
   return {
     createdAt: limit(payload.createdAt || new Date().toISOString(), 40),
     type: limit(payload.type || "ОС", 40),
-    rating: limit(payload.rating || "", 10),
     name: limit(payload.name || "Не указано", 120),
     contact: limit(payload.contact || "Не указано", 160),
     message: limit(payload.message || "", 4000),
@@ -87,7 +86,6 @@ function renderEntry(id, feedback) {
     "",
     `- Дата: ${feedback.createdAt}`,
     `- Тип: ${feedback.type}`,
-    `- Оценка: ${feedback.rating || "Не указано"}`,
     `- Имя: ${feedback.name}`,
     `- Контакт: ${feedback.contact}`,
     `- Страница: ${feedback.page || "Не указано"}`,
@@ -109,7 +107,7 @@ function renderTableRow(id, feedback, entryPath) {
   const date = feedback.createdAt.slice(0, 10);
   const contact = feedback.contact === "Не указано" ? "Не указано" : feedback.contact;
   const entryLink = `[${id}](${entryPath})`;
-  return `| ${escapeCell(id)} | ${escapeCell(date)} | ${escapeCell(feedback.type)} | ${escapeCell(feedback.rating || "-")} | ${escapeCell(contact)} | Новая | ${entryLink} |`;
+  return `| ${escapeCell(id)} | ${escapeCell(date)} | ${escapeCell(feedback.type)} | ${escapeCell(contact)} | Новая | ${entryLink} |`;
 }
 
 async function appendFeedbackTableRow(options) {
