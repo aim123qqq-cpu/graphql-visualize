@@ -6,6 +6,7 @@
 
   injectStyles();
   bindTypeLinks();
+  bindStickyEdgeClear();
 
   function injectStyles() {
     if (document.getElementById("referenceLinksPatchStyles")) return;
@@ -58,6 +59,19 @@
     setTimeout(annotateReferenceTypes, 0);
   }
 
+  function bindStickyEdgeClear() {
+    document.addEventListener("pointerdown", clearWhenOutsideEdge, true);
+    document.addEventListener("click", clearWhenOutsideEdge, true);
+  }
+
+  function clearWhenOutsideEdge(event) {
+    if (event.target.closest?.("#graphSvg [data-edge]")) return;
+    window.__graphqlVisualizerSelectedEdge = "";
+    document.querySelectorAll("#graphSvg [data-edge]").forEach((edge) => {
+      edge.classList.remove("selected", "edge-selected");
+    });
+  }
+
   function annotateReferenceTypes() {
     document.querySelectorAll("#details .type-field-type").forEach((type) => {
       const typeName = unwrapType(type.textContent || "");
@@ -81,7 +95,7 @@
 
   function focusGraphNode(node) {
     window.__graphqlVisualizerSelectedEdge = "";
-    document.querySelectorAll("#graphSvg [data-edge]").forEach((edge) => edge.classList.remove("edge-selected"));
+    document.querySelectorAll("#graphSvg [data-edge]").forEach((edge) => edge.classList.remove("selected", "edge-selected"));
 
     node.dispatchEvent(new MouseEvent("click", {
       bubbles: true,
