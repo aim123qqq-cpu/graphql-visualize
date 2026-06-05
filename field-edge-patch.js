@@ -145,9 +145,55 @@
         window.__graphqlVisualizerSelectedEdge = "";
         return;
       }
+      const nearEdge = nearestEdge(svg, event, 18);
+      if (nearEdge) {
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+        window.__graphqlVisualizerSelectedEdge = nearEdge.dataset.edge || "";
+        restoreSelectedEdge(svg);
+        return;
+      }
       window.__graphqlVisualizerSelectedEdge = "";
       setTimeout(() => restoreSelectedEdge(svg), 0);
     });
+  }
+
+  function nearestEdge(svg, event, radius) {
+    const edges = Array.from(svg.querySelectorAll("[data-edge]"));
+    let best = null;
+    let bestDistance = radius;
+
+    edges.forEach((edge) => {
+      const distance = distanceToPath(edge, event.clientX, event.clientY);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        best = edge;
+      }
+    });
+
+    return best;
+  }
+
+  function distanceToPath(path, clientX, clientY) {
+    if (typeof path.getTotalLength !== "function" || typeof path.getPointAtLength !== "function") return Infinity;
+
+    const matrix = path.getScreenCTM();
+    if (!matrix) return Infinity;
+
+    const length = path.getTotalLength();
+    const steps = Math.max(10, Math.min(80, Math.ceil(length / 28)));
+    let best = Infinity;
+
+    for (let index = 0; index <= steps; index += 1) {
+      const point = path.getPointAtLength((length * index) / steps);
+      const screen = point.matrixTransform(matrix);
+      const dx = screen.x - clientX;
+      const dy = screen.y - clientY;
+      best = Math.min(best, Math.sqrt(dx * dx + dy * dy));
+    }
+
+    return best;
   }
 
   function restoreSelectedEdge(svg) {
