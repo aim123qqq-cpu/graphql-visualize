@@ -9,6 +9,7 @@
   injectStyles();
   bindAddFieldSubmit();
   observeEdges();
+  observeNodePositions();
 
   function injectStyles() {
     if (document.getElementById("fieldEdgePatchStyles")) return;
@@ -131,6 +132,73 @@
     observer.observe(svg, { childList: true, subtree: true });
   }
 
+  function observeNodePositions() {
+    const svg = document.getElementById("graphSvg");
+    if (!svg) {
+      setTimeout(observeNodePositions, 120);
+      return;
+    }
+    if (svg.dataset.nodePositionPatchReady) return;
+    svg.dataset.nodePositionPatchReady = "true";
+
+    const positions = window.__graphqlVisualizerNodePositions || new Map();
+    window.__graphqlVisualizerNodePositions = positions;
+
+    const observer = new MutationObserver((records) => {
+      let shouldRestore = false;
+
+      records.forEach((record) => {
+        if (record.type === "attributes") {
+          const node = record.target.closest?.("[data-node]");
+          if (node && record.attributeName === "transform") rememberNodePosition(node);
+          return;
+        }
+        if (record.type === "childList") shouldRestore = true;
+      });
+
+      if (shouldRestore) requestAnimationFrame(() => restoreNodePositions(svg));
+    });
+
+    observer.observe(svg, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["transform"]
+    });
+
+    requestAnimationFrame(() => restoreNodePositions(svg));
+  }
+
+  function rememberNodePosition(node) {
+    if (!node?.dataset?.node) return;
+    const transform = node.getAttribute("transform") || "";
+    const match = transform.match(/translate\(([-0-9.]+),\s*([-0-9.]+)\)/);
+    if (!match) return;
+
+    const x = Number(match[1]);
+    const y = Number(match[2]);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+
+    window.__graphqlVisualizerNodePositions.set(node.dataset.node, { x, y });
+  }
+
+  function restoreNodePositions(svg) {
+    const positions = window.__graphqlVisualizerNodePositions;
+    if (!positions?.size) return;
+
+    let changed = false;
+    svg.querySelectorAll("[data-node]").forEach((node) => {
+      const saved = positions.get(node.dataset.node || "");
+      if (!saved) return;
+      node.dataset.x = String(saved.x);
+      node.dataset.y = String(saved.y);
+      node.setAttribute("transform", `translate(${saved.x}, ${saved.y})`);
+      changed = true;
+    });
+
+    if (changed) redrawVisibleEdges(svg);
+  }
+
   function bindEdgeClicks(svg) {
     svg.addEventListener("click", (event) => {
       const edge = event.target.closest?.("[data-edge]");
@@ -202,6 +270,108 @@
       const selected = selectedId && edge.dataset.edge === selectedId;
       edge.classList.toggle("edge-selected", Boolean(selected));
     });
+  }
+
+  function redrawVisibleEdges(svg) {
+    const paths = Array.from(svg.querySelectorAll("[data-edge]"));
+    const edges = paths.map((path) => edgeParts(path.dataset.edge || "")).filter(Boolean);
+    const lanes = edgeLanes(edges);
+
+    paths.forEach((path) => {
+      const edge = edgeParts(path.dataset.edge || "");
+      if (!edge) return;
+      const source = nodeById(svg, edge.source);
+      const target = nodeById(svg, edge.target);
+      if (!source || !target) return;
+      path.setAttribute("d", edgePath(edge, source, target, lanes.get(edge.id) || 0));
+    });
+  }
+
+  function edgeParts(id) {
+    const match = String(id).match(/^(.+)->(.+):(.+)$/);
+    if (!match) return null;
+    return { id, source: match[1], target: match[2], label: match[3] };
+  }
+
+  function edgeLanes(edges) {
+    const groups = new Map();
+    edges.forEach((edge) => {
+      const key = edge.source < edge.target ? `${edge.source}|${edge.target}` : `${edge.target}|${edge.source}`;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(edge);
+    });
+
+    const lanes = new Map();
+    groups.forEach((items) => {
+      items.forEach((edge, index) => lanes.set(edge.id, (index - (items.length - 1) / 2) * 24));
+    });
+    return lanes;
+  }
+
+  function edgePath(edge, sourceNode, targetNode, lane) {
+    const source = nodeBox(sourceNode);
+    const target = nodeBox(targetNode);
+    const forward = source.x + source.width / 2 <= target.x + target.width / 2;
+    const sx = forward ? source.x + source.width : source.x;
+    const tx = forward ? target.x : target.x + target.width;
+    const sy = source.y + sourceY(sourceNode, edge.label, source.height);
+    const ty = target.y + targetY(targetNode, edge.source, target.height);
+    const dir = forward ? 1 : -1;
+    const lead = sx + dir * (70 + Math.abs(lane));
+    const trail = tx - dir * (70 + Math.abs(lane));
+    const midY = (sy + ty) / 2 + lane;
+    return roundedPath([[sx, sy], [lead, sy], [lead, midY], [trail, midY], [trail, ty], [tx, ty]], 14);
+  }
+
+  function nodeById(svg, id) {
+    return Array.from(svg.querySelectorAll("[data-node]")).find((node) => node.dataset.node === id);
+  }
+
+  function nodeBox(node) {
+    const rect = node.querySelector("rect");
+    return {
+      x: Number(node.dataset.x) || 0,
+      y: Number(node.dataset.y) || 0,
+      width: Number(rect?.getAttribute("width")) || 0,
+      height: Number(rect?.getAttribute("height")) || 0
+    };
+  }
+
+  function sourceY(node, field, height) {
+    const row = Array.from(node.querySelectorAll(".field-row")).find((item) => item.dataset.field === field);
+    return row ? Number(row.querySelector(".field-name")?.getAttribute("y")) - 3 : height / 2;
+  }
+
+  function targetY(node, source, height) {
+    const row = Array.from(node.querySelectorAll(".field-row")).find((item) => unwrapType(item.querySelector(".field-type")?.textContent || "") === source);
+    return row ? Number(row.querySelector(".field-name")?.getAttribute("y")) - 3 : Math.min(height - 18, 30);
+  }
+
+  function roundedPath(points, radius) {
+    if (points.length < 2) return "";
+    let d = `M ${points[0][0]} ${points[0][1]}`;
+    for (let index = 1; index < points.length - 1; index += 1) {
+      const prev = points[index - 1];
+      const curr = points[index];
+      const next = points[index + 1];
+      const before = trimPoint(curr, prev, radius);
+      const after = trimPoint(curr, next, radius);
+      d += ` L ${before[0]} ${before[1]} Q ${curr[0]} ${curr[1]} ${after[0]} ${after[1]}`;
+    }
+    const last = points[points.length - 1];
+    return `${d} L ${last[0]} ${last[1]}`;
+  }
+
+  function trimPoint(from, to, radius) {
+    const dx = to[0] - from[0];
+    const dy = to[1] - from[1];
+    const length = Math.max(1, Math.abs(dx) + Math.abs(dy));
+    const distance = Math.min(radius, length / 2);
+    return [from[0] + Math.sign(dx) * distance, from[1] + Math.sign(dy) * distance];
+  }
+
+  function unwrapType(type) {
+    return String(type || "").replace(/[![\]\\s]/g, "");
   }
 
   function ensureSelectedMarker(svg) {
