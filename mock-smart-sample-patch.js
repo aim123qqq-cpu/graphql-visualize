@@ -85,7 +85,8 @@
       .slice(0, MAX_OBJECT_FIELDS);
     const fields = [...scalarFields, ...objectFields].slice(0, MAX_FIELDS);
 
-    return fields.map((field) => {
+    const lines = [`${indent(depth)}__typename`];
+    return lines.concat(fields.map((field) => {
       const childType = namedType(field.type);
       const childSelection = sampleSelectionForType(schema, childType, depth + 1, nextVisited);
       const args = field.args?.length
@@ -94,7 +95,7 @@
       return childSelection
         ? `${indent(depth)}${field.name}${args} {\n${childSelection}\n${indent(depth)}}`
         : `${indent(depth)}${field.name}${args}`;
-    }).join("\n");
+    })).join("\n");
   }
 
   function sampleAbstractSelection(schema, type, depth, visited) {
